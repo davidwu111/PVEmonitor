@@ -70,6 +70,7 @@ def run_collection(
     # Acquire non-overlap lock
     if not acquire_lock(config.lock_path, config.stale_lock_timeout_s, force=force):
         logger.info("Could not acquire lock — another collector is running. Exiting.")
+        print("collect: another collector is running — exiting")
         return 0
 
     error_count = 0
@@ -93,6 +94,7 @@ def run_collection(
                     host_metrics = collect_host_metrics(config)
                 except Exception as exc:
                     logger.error("Host metrics collection failed: %s", exc)
+                    print(f"  host: FAILED — {exc}")
                     error_count += 1
 
             # 2. Collect GPU metrics
@@ -102,6 +104,7 @@ def run_collection(
                     host_metrics.update(gpu_metrics)
                 except Exception as exc:
                     logger.error("GPU metrics collection failed: %s", exc)
+                    print(f"  gpu: FAILED — {exc}")
                     error_count += 1
 
             # 3. Collect guest inventory
@@ -111,6 +114,7 @@ def run_collection(
                     guests = collect_guest_inventory(config)
                 except Exception as exc:
                     logger.error("Guest inventory collection failed: %s", exc)
+                    print(f"  guests: FAILED — {exc}")
                     error_count += 1
 
             # 4. For each guest, collect details and build metrics
@@ -228,11 +232,17 @@ def run_collection(
 
             # 9. Commit transaction
             conn.commit()
-            logger.info(
-                "Collection complete: sample %d, %d host metrics, %d guests, %d errors in %dms",
-                sample_id, len(host_metrics), len(guest_metrics_list),
-                error_count, collection_ms,
-            )
+
+            running_count = sum(1 for _, m in guest_metrics_list if m.get("is_running"))
+            total_guests = len(guest_metrics_list)
+            elapsed_ms = collection_ms
+
+            summary = f"sample {sample_id} — {total_guests} guests ({running_count} running), {len(host_metrics)} host metrics, {elapsed_ms}ms"
+            if error_count > 0:
+                summary += f", {error_count} errors"
+
+            logger.info("Collection complete: %s", summary)
+            print(summary)
 
             # 10. Periodic WAL maintenance
             maybe_checkpoint(conn)

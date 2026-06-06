@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ..api import get_db
+from ..deps import get_db
 
 router = APIRouter(prefix="/api/guests", tags=["guests"])
 

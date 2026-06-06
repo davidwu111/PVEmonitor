@@ -7,7 +7,7 @@ import time
 
 from fastapi import APIRouter, HTTPException
 
-from ..api import get_db
+from ..deps import get_db
 
 router = APIRouter(prefix="/api", tags=["health"])
 

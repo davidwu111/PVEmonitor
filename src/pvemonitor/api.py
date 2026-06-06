@@ -15,27 +15,12 @@ from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import Config, get_config
-from .db import get_readonly_connection
+from .deps import get_api_config, get_db
 from .api_routes.health import router as health_router
 from .api_routes.host import router as host_router
 from .api_routes.guests import router as guests_router
 
 logger = logging.getLogger(__name__)
-
-_config: Config | None = None
-
-
-def get_api_config() -> Config:
-    global _config
-    if _config is None:
-        _config = get_config()
-    return _config
-
-
-def get_db() -> Any:
-    """Get a read-only database connection for the API."""
-    cfg = get_api_config()
-    return get_readonly_connection(str(cfg.db_path))
 
 
 @asynccontextmanager

@@ -63,6 +63,7 @@ def collect_guest_inventory(config: Config) -> list[dict[str, Any]]:
         guests.append({
             "vmid": vmid,
             "type": gtype,
+            "node": item.get("node"),
             "name": item.get("name", str(vmid)),
             "status": status,
             "is_running": 1 if status == "running" else 0,
@@ -85,15 +86,16 @@ def collect_guest_inventory(config: Config) -> list[dict[str, Any]]:
 def collect_guest_details(
     vmid: int,
     guest_type: str,
+    node: str | None = None,
 ) -> dict[str, Any]:
     """Fetch detailed status for a specific guest.
 
-    Calls pvesh get /nodes/pve/<qemu|lxc>/<vmid>/status/current.
+    Calls pvesh get /nodes/<node>/<qemu|lxc>/<vmid>/status/current.
 
     Returns a dict of guest detail fields, or an empty dict on failure.
     """
-    node = "pve"  # Configurable in future: detect node name
-    path = f"/nodes/{node}/{guest_type}/{vmid}/status/current"
+    resolved_node = node or "pve"
+    path = f"/nodes/{resolved_node}/{guest_type}/{vmid}/status/current"
 
     try:
         raw = run_cmd(
@@ -104,7 +106,13 @@ def collect_guest_details(
             return {}
         return json.loads(raw)
     except (SubprocessError, json.JSONDecodeError) as exc:
-        logger.warning("Failed to fetch details for %s %d: %s", guest_type, vmid, exc)
+        logger.warning(
+            "Failed to fetch details for %s %d on node %s: %s",
+            guest_type,
+            vmid,
+            resolved_node,
+            exc,
+        )
         return {}
 
 

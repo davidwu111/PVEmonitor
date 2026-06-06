@@ -4,7 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PVEmonitor Dashboard</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+<script src="/static/vendor/chart.umd.min.js"></script>
+<script>
+  if (typeof Chart === 'undefined') {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"><\\/script>');
+  }
+</script>
 <style>
   :root {
     --bg: #0d1117; --surface: #161b22; --border: #30363d;
@@ -291,7 +296,7 @@ function buildDatasets(rows, fieldMap, range) {
 }
 
 // Create a Chart.js line chart, catching any errors
-function makeChart(canvasId, datasets, scaleOverrides) {
+function makeChart(canvasId, chartData, scaleOverrides) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) { console.warn('Canvas not found:', canvasId); return null; }
   _destroy(canvasId);
@@ -303,7 +308,7 @@ function makeChart(canvasId, datasets, scaleOverrides) {
     if (old) old.remove();
   }
 
-  if (!datasets || !datasets.length) {
+  if (!chartData || !Array.isArray(chartData.datasets) || !chartData.datasets.length) {
     if (box) {
       const div = document.createElement('div');
       div.className = 'no-data-msg';
@@ -316,7 +321,7 @@ function makeChart(canvasId, datasets, scaleOverrides) {
   try {
     const chart = new Chart(canvas.getContext('2d'), {
       type: 'line',
-      data: { labels: datasets.labels, datasets: datasets.datasets },
+      data: { labels: chartData.labels, datasets: chartData.datasets },
       options: {
         responsive: false,
         animation: false,
@@ -348,7 +353,7 @@ async function loadHealth() {
   try {
     const h = await fetchJSON(apiUrl('/api/health'));
     if (!h) return;
-    document.getElementById('hostname').textContent = h.latest_sample_ts ? 'host: pve' : 'host: —';
+    document.getElementById('hostname').textContent = h.hostname ? 'host: ' + h.hostname : (h.latest_sample_ts ? 'host: pve' : 'host: —');
     document.getElementById('sample-count').textContent = 'samples: ' + (h.total_samples?.toLocaleString()||0);
     document.getElementById('db-size').textContent = 'db: ' + (h.db_size_bytes?(h.db_size_bytes/1048576).toFixed(1):'0') + ' MB';
     diag('health OK, ' + (h.total_samples||0) + ' samples');
@@ -405,8 +410,8 @@ async function loadHostCharts(range) {
 
   // Memory
   makeChart('memChart', buildDatasets(rows, {
-    'used': r=>r.mem_used_bytes?+(r.mem_used_bytes/1073741824).toFixed(2):null,
-    'free': r=>r.mem_free_bytes?+(r.mem_free_bytes/1073741824).toFixed(2):null,
+    'used': r=>r.mem_used_bytes != null ? +(r.mem_used_bytes/1073741824).toFixed(2) : null,
+    'free': r=>r.mem_free_bytes != null ? +(r.mem_free_bytes/1073741824).toFixed(2) : null,
   }, range), { y: { beginAtZero: true } });
 
   // CPU temp
@@ -416,7 +421,7 @@ async function loadHostCharts(range) {
 
   // Swap
   makeChart('swapChart', buildDatasets(rows, {
-    'swap': r=>r.swap_used_bytes?+(r.swap_used_bytes/1073741824).toFixed(3):null,
+    'swap': r=>r.swap_used_bytes != null ? +(r.swap_used_bytes/1073741824).toFixed(3) : null,
   }, range), { y: { beginAtZero: true } });
 
   // PSI
@@ -481,7 +486,7 @@ async function loadGuestCharts(vmid) {
     'cpu': r=>r.cpu_host_pct, 'cpu_of_alloc': r=>r.cpu_of_allocated_pct,
   }, r));
   makeChart('guestMemChart', buildDatasets(rows, {
-    'mem': r=>r.mem_bytes?+(r.mem_bytes/1048576).toFixed(1):null,
+    'mem': r=>r.mem_bytes != null ? +(r.mem_bytes/1048576).toFixed(1) : null,
   }, r), { y: { beginAtZero: true } });
   makeChart('guestNetChart', buildDatasets(rows, {
     'netin': r=>r.netin_bps, 'netout': r=>r.netout_bps,

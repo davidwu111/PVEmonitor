@@ -128,7 +128,7 @@ def run_collection(
                 try:
                     if item["is_running"]:
                         # Running guest: fetch detailed status
-                        details = collect_guest_details(vmid, gtype)
+                        details = collect_guest_details(vmid, gtype, item.get("node"))
                         if not details and item["status"] == "running":
                             # pvesh may have failed; use inventory data, mark unknown
                             logger.warning(

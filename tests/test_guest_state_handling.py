@@ -1,7 +1,11 @@
 """Tests for guest state handling and metrics building."""
 
+import json
+
 import pytest
-from pvemonitor.guests import build_guest_metrics
+import pvemonitor.guests as guests_module
+from pvemonitor.config import Config
+from pvemonitor.guests import build_guest_metrics, collect_guest_details, collect_guest_inventory
 
 
 class TestBuildGuestMetrics:
@@ -165,3 +169,41 @@ class TestBuildGuestMetrics:
 
         assert metrics["status"] == "unknown"
         assert metrics["is_running"] == 0
+
+
+class TestGuestNodeHandling:
+    def test_collect_guest_inventory_keeps_node_name(self, monkeypatch):
+        sample_inventory = [
+            {
+                "vmid": 201,
+                "type": "qemu",
+                "node": "pve-b",
+                "name": "remote-vm",
+                "status": "running",
+                "cpu": 0.25,
+                "maxcpu": 4,
+            }
+        ]
+
+        def fake_run_cmd(cmd, timeout=None):
+            return json.dumps(sample_inventory)
+
+        monkeypatch.setattr(guests_module, "run_cmd", fake_run_cmd)
+
+        guests = collect_guest_inventory(config=Config())
+
+        assert guests[0]["node"] == "pve-b"
+
+    def test_collect_guest_details_uses_guest_node(self, monkeypatch):
+        seen = {}
+
+        def fake_run_cmd(cmd, timeout=None):
+            seen["cmd"] = cmd
+            return json.dumps({"status": "running"})
+
+        monkeypatch.setattr(guests_module, "run_cmd", fake_run_cmd)
+
+        details = collect_guest_details(vmid=201, guest_type="qemu", node="pve-b")
+
+        assert details["status"] == "running"
+        assert seen["cmd"][2] == "/nodes/pve-b/qemu/201/status/current"

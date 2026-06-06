@@ -31,6 +31,7 @@ async def health():
             return {
                 "status": "degraded",
                 "reason": "No samples in database",
+                "hostname": None,
                 "latest_sample_ts": None,
                 "latest_sample_age_s": None,
                 "total_samples": 0,
@@ -40,8 +41,13 @@ async def health():
         latest_epoch = row["epoch_s"]
         age_s = int(time.time()) - latest_epoch
 
-        # Total samples
-        total = conn.execute("SELECT COUNT(*) as cnt FROM samples").fetchone()["cnt"]
+        # Total samples + latest hostname
+        total_row = conn.execute("SELECT COUNT(*) as cnt FROM samples").fetchone()
+        total = total_row["cnt"]
+        host_row = conn.execute(
+            "SELECT hostname FROM samples ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        hostname = host_row["hostname"] if host_row is not None else None
 
         # DB size
         db_path = conn.execute("PRAGMA database_list").fetchone()["file"]
@@ -60,6 +66,7 @@ async def health():
 
         result = {
             "status": status,
+            "hostname": hostname,
             "latest_sample_ts": ts,
             "latest_sample_age_s": age_s,
             "total_samples": total,

@@ -48,13 +48,17 @@ def create_app(config: Config | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Auth middleware: check token if configured
+    static_dir = Path(__file__).parent / "static"
+
+    # Auth middleware: check token if configured.
+    # Keep the dashboard and static assets reachable so the user can enter the
+    # token client-side, and allow OPTIONS preflight requests.
     auth_token = _config.api_auth_token
     if auth_token:
         @app.middleware("http")
         async def auth_middleware(request: Request, call_next):
-            # Skip auth for health endpoint
-            if request.url.path == "/api/health":
+            path = request.url.path
+            if request.method == "OPTIONS" or path in {"/", "/dashboard", "/api/health"} or path.startswith("/static/"):
                 return await call_next(request)
 
             token = request.query_params.get("token") or request.headers.get("Authorization", "").removeprefix("Bearer ")
@@ -79,9 +83,10 @@ def create_app(config: Config | None = None) -> FastAPI:
     async def root():
         return RedirectResponse(url="/dashboard")
 
-    # Dashboard static file
-    static_dir = Path(__file__).parent / "static"
+    # Dashboard static file and locally served frontend assets.
     if static_dir.exists():
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
         @app.get("/dashboard")
         async def dashboard():
             return FileResponse(static_dir / "dashboard.html")

@@ -6,14 +6,7 @@ After=pvemonitor-api.service
 Type=oneshot
 RemainAfterExit=no
 Environment=PVEMONITOR_HOME=@@PVEMONITOR_HOME@@
-# Run WAL checkpoint (TRUNCATE) and optimize
-ExecStart=@@PVEMONITOR_HOME@@/.venv/bin/python -c "
-import sqlite3
-conn = sqlite3.connect('@@PVEMONITOR_HOME@@/runtime/db/metrics.sqlite3')
-conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
-conn.execute('PRAGMA optimize')
-conn.close()
-"
+ExecStart=@@PVEMONITOR_HOME@@/scripts/maintenance.sh
 StandardOutput=journal
 StandardError=journal
 

@@ -32,22 +32,18 @@
   }
   .time-controls button {
     padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px;
-    background: var(--surface); color: var(--text); cursor: pointer; font-size: 12px;
-    white-space: nowrap;
+    background: var(--surface); color: var(--text); cursor: pointer; font-size: 12px; white-space: nowrap;
   }
   .time-controls button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   .time-controls button:hover:not(.active) { background: #21262d; }
   .time-controls .sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
   .time-controls input[type="datetime-local"] {
     padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;
-    background: var(--surface); color: var(--text); font-size: 12px;
-    font-family: inherit;
+    background: var(--surface); color: var(--text); font-size: 12px; font-family: inherit;
   }
   .time-controls .custom-range { display: none; align-items: center; gap: 6px; }
   .time-controls .custom-range.visible { display: flex; }
-  .time-range-hint {
-    font-size: 11px; color: var(--text-muted); margin-left: 8px;
-  }
+  .time-range-hint { font-size: 11px; color: var(--text-muted); margin-left: 8px; }
   .charts-grid {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
     gap: 16px; margin-bottom: 16px;
@@ -57,7 +53,7 @@
     border-radius: 8px; padding: 16px;
   }
   .chart-box h2 { font-size: 14px; font-weight: 600; margin-bottom: 8px; color: var(--text-muted); }
-  .chart-box canvas { width: 100%; max-height: 280px; }
+  .chart-box canvas { width: 100% !important; max-height: 280px; }
   .full-width { grid-column: 1 / -1; }
   .guest-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .guest-table th {
@@ -75,11 +71,11 @@
   .value-null { color: var(--text-muted); }
   .drilldown { display: none; }
   .drilldown.visible { display: block; }
-  .token-bar {
-    display: flex; align-items: center; gap: 8px; margin-left: 16px; font-size: 13px;
-  }
+  .token-bar { display: flex; align-items: center; gap: 8px; margin-left: 16px; font-size: 13px; }
   .token-bar input { padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px;
     background: var(--bg); color: var(--text); width: 160px; }
+  .no-data-msg { text-align:center; padding:20px 0; color:var(--text-muted); font-size:13px; }
+  #diag { font-size:11px; color:var(--text-muted); margin-bottom:8px; display:none; }
   @media (max-width: 700px) {
     .charts-grid { grid-template-columns: 1fr; }
     .header { flex-direction: column; align-items: flex-start; gap: 8px; }
@@ -106,7 +102,8 @@
   </div>
 </div>
 
-<div id="status-banner" style="display:none; padding:8px 16px; margin-bottom:12px; border-radius:6px; font-size:13px; background:#f8514922; border:1px solid #f85149; color:#f85149;"></div>
+<div id="status-banner" style="display:none; padding:8px 16px; margin-bottom:12px; border-radius:6px; font-size:13px;"></div>
+<div id="diag"></div>
 
 <div class="time-controls">
   <button data-range="15m" class="active">15m</button>
@@ -127,44 +124,23 @@
   <span class="time-range-hint" id="range-hint"></span>
 </div>
 
-<div class="charts-grid">
-  <div class="chart-box">
-    <h2>CPU Usage %</h2>
-    <canvas id="cpuChart"></canvas>
-  </div>
-  <div class="chart-box">
-    <h2>GPU Busy % + Temp °C</h2>
-    <canvas id="gpuChart"></canvas>
-  </div>
-  <div class="chart-box">
-    <h2>Load Average</h2>
-    <canvas id="loadChart"></canvas>
-  </div>
-  <div class="chart-box">
-    <h2>Memory (GiB)</h2>
-    <canvas id="memChart"></canvas>
-  </div>
-  <div class="chart-box">
-    <h2>CPU Temperature °C</h2>
-    <canvas id="cputempChart"></canvas>
-  </div>
-  <div class="chart-box">
-    <h2>Swap Usage (GiB)</h2>
-    <canvas id="swapChart"></canvas>
-  </div>
+<div class="charts-grid" id="charts-root">
+  <div class="chart-box"><h2>CPU Usage %</h2><canvas id="cpuChart"></canvas></div>
+  <div class="chart-box"><h2>GPU Busy % + Temp °C</h2><canvas id="gpuChart"></canvas></div>
+  <div class="chart-box"><h2>Load Average</h2><canvas id="loadChart"></canvas></div>
+  <div class="chart-box"><h2>Memory (GiB)</h2><canvas id="memChart"></canvas></div>
+  <div class="chart-box"><h2>CPU Temperature °C</h2><canvas id="cputempChart"></canvas></div>
+  <div class="chart-box"><h2>Swap Usage (GiB)</h2><canvas id="swapChart"></canvas></div>
   <div class="chart-box full-width">
     <h2>Guest Overview</h2>
     <table class="guest-table" id="guest-table">
-      <thead><tr>
-        <th>VMID</th><th>Type</th><th>Name</th><th>Status</th>
-        <th>CPU%</th><th>Mem%</th><th>Net ↓</th><th>Net ↑</th><th>Disk ↓</th><th>Disk ↑</th>
-      </tr></thead>
+      <thead><tr><th>VMID</th><th>Type</th><th>Name</th><th>Status</th><th>CPU%</th><th>Mem%</th><th>Net↓</th><th>Net↑</th><th>Disk↓</th><th>Disk↑</th></tr></thead>
       <tbody id="guest-tbody"></tbody>
     </table>
   </div>
   <div class="chart-box full-width drilldown" id="drilldown-section">
     <h2 id="drilldown-title">Guest Detail</h2>
-    <div class="charts-grid">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;">
       <div class="chart-box"><h2>CPU %</h2><canvas id="guestCpuChart"></canvas></div>
       <div class="chart-box"><h2>Memory (MiB)</h2><canvas id="guestMemChart"></canvas></div>
       <div class="chart-box"><h2>Network (bps)</h2><canvas id="guestNetChart"></canvas></div>
@@ -173,7 +149,7 @@
   </div>
   <div class="chart-box full-width">
     <h2>PSI — Pressure Stall (avg10/60/300)</h2>
-    <div class="charts-grid">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;">
       <div class="chart-box"><h2>CPU Pressure</h2><canvas id="psiCpuChart"></canvas></div>
       <div class="chart-box"><h2>IO Pressure</h2><canvas id="psiIoChart"></canvas></div>
       <div class="chart-box"><h2>Memory Pressure</h2><canvas id="psiMemChart"></canvas></div>
@@ -182,390 +158,309 @@
 </div>
 
 <script>
-// ─── Configuration ────────────────────────────────────────────────────
-const API_BASE = '';
-const TOKEN_KEY = 'pvemonitor_token';
-let REFRESH_S = 10;
-let currentRange = '15m';
-let customFrom = null, customTo = null; // ISO strings for custom range
-let selectedGuest = null;
+// ─── Startup check ─────────────────────────────────────────────────────
+(function() {
+  if (typeof Chart === 'undefined') {
+    document.getElementById('charts-root').innerHTML =
+      '<div class="chart-box full-width"><div class="no-data-msg" style="color:#f85149;font-size:14px;">' +
+      'Chart.js failed to load from CDN.<br>' +
+      'This browser needs internet access to load charts from cdn.jsdelivr.net.<br>' +
+      'If this host has no internet, download Chart.js and serve it locally.</div></div>';
+    throw new Error('Chart.js not available');
+  }
+})();
 
-// ─── API helpers ───────────────────────────────────────────────────────
-function getToken() {
-  return localStorage.getItem(TOKEN_KEY) || '';
-}
+// ─── Config ────────────────────────────────────────────────────────────
+const API_BASE = '', TOKEN_KEY = 'pvemonitor_token';
+let REFRESH_S = 10, currentRange = '15m', customFrom = null, customTo = null, selectedGuest = null;
+
+// ─── Helpers ───────────────────────────────────────────────────────────
+function getToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
 function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
 function apiUrl(path) {
-  const t = getToken();
   let u = API_BASE + path;
-  if (t) u += (u.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(t);
+  const t = getToken();
+  if (t) u += (u.includes('?')?'&':'?') + 'token=' + encodeURIComponent(t);
   return u;
 }
 
 async function fetchJSON(url) {
   const resp = await fetch(url);
-  if (!resp.ok) {
-    if (resp.status === 401) {
-      console.warn('API returned 401 — token required.');
-      return null;
-    }
-    throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
-  }
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.json();
 }
 
-// ─── Token input ───────────────────────────────────────────────────────
+const diagEl = document.getElementById('diag');
+function diag(msg) {
+  diagEl.style.display = 'block';
+  diagEl.textContent = ['DEBUG', new Date().toLocaleTimeString(), msg].join(' | ');
+}
+
+function showBanner(msg, kind) {
+  const el = document.getElementById('status-banner');
+  el.textContent = msg; el.style.display = 'block';
+  const c = {error:['#f8514922','#f85149'],warn:['#d2991d22','#d2991d'],info:['#58a6ff22','#58a6ff']}[kind]||['#f8514922','#f85149'];
+  el.style.background=c[0];el.style.borderColor=c[1];el.style.color=c[1];
+}
+function hideBanner() { document.getElementById('status-banner').style.display='none'; }
+
 const tokenInput = document.getElementById('token-input');
-const savedToken = getToken();
-if (savedToken) tokenInput.value = savedToken;
+if (getToken()) tokenInput.value = getToken();
 tokenInput.addEventListener('change', () => { setToken(tokenInput.value.trim()); loadAll(); });
-tokenInput.addEventListener('input', () => { setToken(tokenInput.value.trim()); });
 
 // ─── Time helpers ──────────────────────────────────────────────────────
-function rangeToSeconds(range) {
-  if (range === 'yesterday') return 86400;
-  if (range === 'custom') {
-    if (!customFrom || !customTo) return 3600;
-    return (new Date(customTo) - new Date(customFrom)) / 1000;
-  }
-  const m = range.match(/^(\d+)(m|h|d)$/);
-  if (!m) return 900;
+function rangeToSeconds(r) {
+  if (r === 'yesterday') return 86400;
+  if (r === 'custom') return customFrom && customTo ? (new Date(customTo)-new Date(customFrom))/1000 : 3600;
+  const m = r.match(/^(\d+)(m|h|d)$/); if (!m) return 900;
   const n = parseInt(m[1]);
-  if (m[2] === 'm') return n * 60;
-  if (m[2] === 'h') return n * 3600;
-  return n * 86400;
+  if (m[2]==='m') return n*60; if (m[2]==='h') return n*3600; return n*86400;
 }
 
 function buildTimeParams(range) {
-  // Returns {from, to} strings for the API
   if (range === 'yesterday') {
-    const now = new Date();
-    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    const start = new Date(end.getTime() - 86400000);
-    return {
-      from: start.toISOString().replace('.000', ''),
-      to: end.toISOString().replace('.000', ''),
-    };
+    const now = new Date(), end = new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()));
+    return { from: new Date(end.getTime()-86400000).toISOString().replace('.000',''), to: end.toISOString().replace('.000','') };
   }
-  if (range === 'custom' && customFrom && customTo) {
-    return {
-      from: new Date(customFrom).toISOString().replace('.000', ''),
-      to: new Date(customTo).toISOString().replace('.000', ''),
-    };
-  }
-  const from = rangeToParam(range);
+  if (range === 'custom' && customFrom && customTo)
+    return { from: new Date(customFrom).toISOString().replace('.000',''), to: new Date(customTo).toISOString().replace('.000','') };
+  const s = rangeToSeconds(range);
+  let from;
+  if (s < 3600) from = `-${Math.round(s/60)}m`;
+  else if (s < 86400) from = `-${Math.round(s/3600)}h`;
+  else from = `-${Math.round(s/86400)}d`;
   return { from, to: 'now' };
 }
 
-function rangeToParam(range) {
-  if (range === 'yesterday' || range === 'custom') {
-    return buildTimeParams(range).from;
-  }
-  const s = rangeToSeconds(range);
-  if (s < 3600) return `-${Math.round(s/60)}m`;
-  if (s < 86400) return `-${Math.round(s/3600)}h`;
-  return `-${Math.round(s/86400)}d`;
-}
-
-// ─── Smart label formatting ────────────────────────────────────────────
-function formatLabel(ts, range, index, total) {
+function formatLabel(ts, range, i, total) {
   if (!ts) return '';
-  // ts is like "2026-06-06T04:12:30Z"
-  const d = new Date(ts);
-  if (isNaN(d.getTime())) return ts;
-
-  const rangeS = rangeToSeconds(range);
-
-  if (rangeS <= 3600) {
-    // ≤1h: HH:MM:SS
-    return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  } else if (rangeS <= 86400) {
-    // ≤24h: HH:MM
-    return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-  } else if (rangeS <= 604800) {
-    // ≤7d: show date + hour, but only show ~20 labels to avoid crowding
-    const step = Math.max(1, Math.floor(total / 20));
-    if (index % step !== 0 && index !== total - 1 && index !== 0) return '';
-    return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' })
-      + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-  } else {
-    // >7d: show date only, sparse labels
-    const step = Math.max(1, Math.floor(total / 25));
-    if (index % step !== 0 && index !== total - 1 && index !== 0) return '';
-    return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
-  }
+  const d = new Date(ts); if (isNaN(d.getTime())) return ts;
+  const rs = rangeToSeconds(range);
+  if (rs <= 3600) return d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  if (rs <= 86400) return d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  const step = Math.max(1, Math.floor(total/(rs<=604800?20:25)));
+  if (i%step!==0 && i!==total-1 && i!==0) return '';
+  if (rs <= 604800) return d.toLocaleDateString('en-GB',{month:'short',day:'numeric'}) + ' ' + d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  return d.toLocaleDateString('en-GB',{month:'short',day:'numeric'});
 }
 
-// ─── Chart helpers ─────────────────────────────────────────────────────
-function createChart(canvasId, config) {
-  const ctx = document.getElementById(canvasId).getContext('2d');
-  return new Chart(ctx, {
-    ...config,
-    options: {
-      ...config.options,
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      interaction: { mode: 'nearest', axis: 'x', intersect: false },
-      plugins: {
-        legend: { labels: { color: '#8b949e', font: { size: 11 }, usePointStyle: true, pointStyleWidth: 8 } },
-        tooltip: { backgroundColor: '#161b22', borderColor: '#30363d', borderWidth: 1,
-                   titleColor: '#c9d1d9', bodyColor: '#c9d1d9' },
-      },
-      scales: {
-        x: { ticks: { color: '#8b949e', font: { size: 10 }, maxTicksLimit: 20, maxRotation: 45 },
-             grid: { color: '#21262d' } },
-        y: { ticks: { color: '#8b949e', font: { size: 10 } },
-             grid: { color: '#21262d' } }
-      },
-      ...config.options,
-    }
-  });
+const COLORS = {
+  'us':'#58a6ff','sy':'#f0883e','wa':'#f85149','id':'#6e7681',
+  'busy':'#a371f7','temp':'#f85149','vram':'#3fb950',
+  'load1':'#58a6ff','load5':'#d2991d','load15':'#f85149',
+  'used':'#f0883e','free':'#3fb950','swap':'#f85149',
+  'netin':'#58a6ff','netout':'#3fb950','diskread':'#d2991d','diskwrite':'#f0883e',
+  'cpu':'#58a6ff','cpu_of_alloc':'#a371f7','mem':'#3fb950',
+  'some_avg10':'#58a6ff','some_avg60':'#3fb950','some_avg300':'#8b949e',
+};
+
+// ─── Chart engine ──────────────────────────────────────────────────────
+// Single chart reference store
+let _charts = {};
+function _destroy(id) { if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; } }
+
+// Base scale configuration used by all charts
+function baseScales(overrides) {
+  const base = {
+    x: { ticks:{color:'#8b949e',font:{size:10},maxTicksLimit:20,maxRotation:45}, grid:{color:'#21262d'} },
+    y: { ticks:{color:'#8b949e',font:{size:10}}, grid:{color:'#21262d'}, beginAtZero:true }
+  };
+  if (!overrides) return base;
+  // Shallow-merge y, preserve x
+  if (overrides.y) Object.assign(base.y, overrides.y);
+  if (overrides.y1) base['y1'] = Object.assign({position:'right',grid:{drawOnChartArea:false},ticks:{color:'#8b949e',font:{size:10}}}, overrides.y1);
+  return base;
 }
 
-function mapRows(rows, xKey, yKeyFn, range) {
-  if (!rows || !rows.length) return { labels: [], datasets: [] };
-  const total = rows.length;
-  const labels = rows.map((r, i) => formatLabel(r[xKey] || r.ts || '', range, i, total));
+// Build datasets from row array + field map
+function buildDatasets(rows, fieldMap, range) {
+  const labels = rows.map((r,i) => formatLabel(r.ts||'',range,i,rows.length));
   const datasets = [];
-  for (const [name, fn] of Object.entries(yKeyFn)) {
+  for (const [name, fn] of Object.entries(fieldMap)) {
+    const data = rows.map(r => fn(r));
+    // Only add dataset if it has at least one non-null value
+    if (!data.some(v => v != null)) continue;
     datasets.push({
-      label: name, data: rows.map(r => fn(r)),
-      borderColor: COLORS[name] || '#58a6ff',
-      backgroundColor: (COLORS[name] || '#58a6ff') + '22',
+      label: name, data,
+      borderColor: COLORS[name]||'#58a6ff',
+      backgroundColor: (COLORS[name]||'#58a6ff')+'22',
       borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false,
     });
   }
   return { labels, datasets };
 }
 
-const COLORS = {
-  'us': '#58a6ff', 'sy': '#f0883e', 'wa': '#f85149', 'id': '#6e7681', 'usage': '#79c0ff',
-  'busy': '#a371f7', 'temp': '#f85149', 'power': '#d2991d', 'vram': '#3fb950',
-  'load1': '#58a6ff', 'load5': '#d2991d', 'load15': '#f85149',
-  'used': '#f0883e', 'free': '#3fb950', 'swap': '#f85149',
-  'netin': '#58a6ff', 'netout': '#3fb950',
-  'diskread': '#d2991d', 'diskwrite': '#f0883e',
-  'cpu': '#58a6ff', 'cpu_of_alloc': '#a371f7', 'mem': '#3fb950',
-  'some_avg10': '#58a6ff', 'some_avg60': '#3fb950', 'some_avg300': '#8b949e',
-  'full_avg10': '#f85149', 'full_avg60': '#d2991d', 'full_avg300': '#f0883e',
-};
+// Create a Chart.js line chart, catching any errors
+function makeChart(canvasId, datasets, scaleOverrides) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) { console.warn('Canvas not found:', canvasId); return null; }
+  _destroy(canvasId);
 
-// ─── Chart instances ───────────────────────────────────────────────────
-let charts = {};
-function destroyChart(key) { if (charts[key]) { charts[key].destroy(); delete charts[key]; } }
+  // Clear any "no data" message in the parent chart-box
+  const box = canvas.closest('.chart-box');
+  if (box) {
+    const old = box.querySelector('.no-data-msg');
+    if (old) old.remove();
+  }
 
-// ─── Health bar ────────────────────────────────────────────────────────
+  if (!datasets || !datasets.length) {
+    if (box) {
+      const div = document.createElement('div');
+      div.className = 'no-data-msg';
+      div.textContent = 'No data';
+      box.appendChild(div);
+    }
+    return null;
+  }
+
+  try {
+    const chart = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: { labels: datasets.labels, datasets: datasets.datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: 'nearest', axis: 'x', intersect: false },
+        plugins: {
+          legend: { labels: { color: '#8b949e', font: { size: 11 }, usePointStyle: true, pointStyleWidth: 8 } },
+          tooltip: { backgroundColor: '#161b22', borderColor: '#30363d', borderWidth: 1, titleColor: '#c9d1d9', bodyColor: '#c9d1d9' },
+        },
+        scales: baseScales(scaleOverrides),
+      }
+    });
+    _charts[canvasId] = chart;
+    return chart;
+  } catch (e) {
+    console.error('Chart creation failed for', canvasId, e);
+    if (box) {
+      const div = document.createElement('div');
+      div.className = 'no-data-msg';
+      div.style.color = '#f85149';
+      div.textContent = 'Chart error: ' + e.message;
+      box.appendChild(div);
+    }
+    return null;
+  }
+}
+
+// ─── Data loading ──────────────────────────────────────────────────────
 async function loadHealth() {
   try {
     const h = await fetchJSON(apiUrl('/api/health'));
     if (!h) return;
     document.getElementById('hostname').textContent = h.latest_sample_ts ? 'host: pve' : 'host: —';
-    document.getElementById('sample-count').textContent = `samples: ${h.total_samples?.toLocaleString() || 0}`;
-    const mb = h.db_size_bytes ? (h.db_size_bytes / 1048576).toFixed(1) : '0';
-    document.getElementById('db-size').textContent = `db: ${mb} MB`;
-  } catch (e) { console.warn('Health fetch failed:', e); }
+    document.getElementById('sample-count').textContent = 'samples: ' + (h.total_samples?.toLocaleString()||0);
+    document.getElementById('db-size').textContent = 'db: ' + (h.db_size_bytes?(h.db_size_bytes/1048576).toFixed(1):'0') + ' MB';
+    diag('health OK, ' + (h.total_samples||0) + ' samples');
+  } catch(e) { diag('health FAIL: '+e.message); }
 }
 
-// ─── Host charts ───────────────────────────────────────────────────────
 async function loadHostCharts(range) {
-  // Clear any "No data" placeholders from previous runs
-  document.querySelectorAll('.no-data').forEach(el => el.remove());
-  document.querySelectorAll('.chart-box canvas').forEach(c => c.style.display = '');
-
-  const { from, to } = buildTimeParams(range);
-  const url = `/api/host/range?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
-  const rows = await fetchJSON(apiUrl(url));
-
-  if (!rows || !rows.length) {
-    showBanner('No data in this time range — run "pvemonitor collect" to populate the database first.', 'warn');
-    showEmptyCharts();
-    return;
-  }
+  // Clear previous state
+  Object.keys(_charts).forEach(k => _destroy(k));
+  document.querySelectorAll('.no-data-msg').forEach(el => el.remove());
   hideBanner();
 
-  // CPU breakdown
-  destroyChart('cpuChart');
-  const cpuData = mapRows(rows, 'ts', {
-    'us': r => r.cpu_user_pct, 'sy': r => r.cpu_system_pct,
-    'wa': r => r.cpu_iowait_pct, 'id': r => r.cpu_idle_pct,
-  }, range);
-  charts.cpuChart = createChart('cpuChart', {
-    type: 'line', data: { labels: cpuData.labels, datasets: cpuData.datasets.map(d => ({...d, fill: true, stack: 'cpu'})) },
-    options: { scales: { y: { stacked: true, max: 100, title: { display: true, text: '%', color: '#8b949e' } } } }
-  });
+  const { from, to } = buildTimeParams(range);
+  const url = apiUrl('/api/host/range?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to));
+  diag('fetching ' + url);
 
-  // GPU (busy% + temp dual-axis)
-  destroyChart('gpuChart');
-  const hasGpu = rows.some(r => r.gpu_busy_pct != null || r.gpu_temp_c != null);
-  if (hasGpu) {
-    const gpuData = mapRows(rows, 'ts', {
-      'busy': r => r.gpu_busy_pct,
-      'temp': r => r.gpu_temp_c,
-      'vram': r => r.gpu_vram_used_pct,
-    }, range);
-    const gpuDatasets = gpuData.datasets.filter(d => d.data.some(v => v != null));
-    if (gpuDatasets.length) {
-      charts.gpuChart = createChart('gpuChart', {
-        type: 'line', data: { labels: gpuData.labels, datasets: gpuDatasets },
-        options: {
-          scales: {
-            y: { title: { display: true, text: 'Busy/VRAM %', color: '#8b949e' } },
-            y1: { position: 'right', title: { display: true, text: '°C', color: '#f85149' },
-                   grid: { drawOnChartArea: false }, ticks: { color: '#f85149' } },
-          }
-        }
-      });
-      const tempDs = charts.gpuChart.data.datasets.find(d => d.label === 'temp');
-      if (tempDs) tempDs.yAxisID = 'y1';
-      charts.gpuChart.update();
+  let rows;
+  try { rows = await fetchJSON(url); } catch(e) {
+    showBanner('API error: ' + e.message + ' — is the server running?', 'error');
+    diag('API FAIL: '+e.message);
+    return;
+  }
+
+  if (!rows || !rows.length) {
+    showBanner('No data in this time range. Run "pvemonitor collect" to populate.', 'warn');
+    return;
+  }
+
+  diag('got ' + rows.length + ' data points, rendering charts...');
+  hideBanner();
+
+  // CPU breakdown (stacked area)
+  makeChart('cpuChart', buildDatasets(rows, {
+    'us': r=>r.cpu_user_pct, 'sy': r=>r.cpu_system_pct, 'wa': r=>r.cpu_iowait_pct, 'id': r=>r.cpu_idle_pct,
+  }, range), { y: { stacked: true, max: 100 } });
+
+  // GPU
+  if (rows.some(r => r.gpu_busy_pct != null || r.gpu_temp_c != null)) {
+    makeChart('gpuChart', buildDatasets(rows, {
+      'busy': r=>r.gpu_busy_pct, 'temp': r=>r.gpu_temp_c, 'vram': r=>r.gpu_vram_used_pct,
+    }, range), { y: {}, y1: { title: { display: true, text: '°C', color: '#f85149' } } });
+    // Point temp to y1 axis
+    if (_charts['gpuChart']) {
+      const ds = _charts['gpuChart'].data.datasets.find(d => d.label === 'temp');
+      if (ds) ds.yAxisID = 'y1';
+      _charts['gpuChart'].update();
     }
   }
 
   // Load
-  destroyChart('loadChart');
-  const loadData = mapRows(rows, 'ts', {
-    'load1': r => r.load1, 'load5': r => r.load5, 'load15': r => r.load15,
-  }, range);
-  charts.loadChart = createChart('loadChart', { type: 'line', data: { labels: loadData.labels, datasets: loadData.datasets } });
+  makeChart('loadChart', buildDatasets(rows, {
+    'load1': r=>r.load1, 'load5': r=>r.load5, 'load15': r=>r.load15,
+  }, range));
 
   // Memory
-  destroyChart('memChart');
-  const memData = mapRows(rows, 'ts', {
-    'used': r => r.mem_used_bytes ? +(r.mem_used_bytes / 1073741824).toFixed(2) : null,
-    'free': r => r.mem_free_bytes ? +(r.mem_free_bytes / 1073741824).toFixed(2) : null,
-  }, range);
-  charts.memChart = createChart('memChart', {
-    type: 'line', data: { labels: memData.labels, datasets: memData.datasets.map(d => ({...d, fill: true})) },
-    options: { scales: { y: { title: { display: true, text: 'GiB', color: '#8b949e' }, min: 0 } } }
-  });
+  makeChart('memChart', buildDatasets(rows, {
+    'used': r=>r.mem_used_bytes?+(r.mem_used_bytes/1073741824).toFixed(2):null,
+    'free': r=>r.mem_free_bytes?+(r.mem_free_bytes/1073741824).toFixed(2):null,
+  }, range), { y: { beginAtZero: true } });
 
   // CPU temp
-  destroyChart('cputempChart');
-  const cputempData = mapRows(rows, 'ts', { 'temp': r => r.cpu_temp_c }, range);
-  charts.cputempChart = createChart('cputempChart', {
-    type: 'line', data: { labels: cputempData.labels, datasets: cputempData.datasets.map(d => ({...d, fill: true,
-      backgroundColor: '#f8514922', borderColor: '#f85149'})) },
-    options: { scales: { y: { title: { display: true, text: '°C', color: '#8b949e' } } } }
-  });
+  makeChart('cputempChart', buildDatasets(rows, {
+    'temp': r=>r.cpu_temp_c,
+  }, range));
 
   // Swap
-  destroyChart('swapChart');
-  const swapData = mapRows(rows, 'ts', {
-    'swap': r => r.swap_used_bytes ? +(r.swap_used_bytes / 1073741824).toFixed(3) : null,
-  }, range);
-  charts.swapChart = createChart('swapChart', {
-    type: 'line', data: { labels: swapData.labels, datasets: swapData.datasets.map(d => ({...d, fill: true})) },
-    options: { scales: { y: { title: { display: true, text: 'GiB', color: '#8b949e' }, min: 0 } } }
-  });
+  makeChart('swapChart', buildDatasets(rows, {
+    'swap': r=>r.swap_used_bytes?+(r.swap_used_bytes/1073741824).toFixed(3):null,
+  }, range), { y: { beginAtZero: true } });
 
   // PSI
-  loadPsiCharts(rows, range);
-}
-
-function showEmptyCharts() {
-  const ids = ['cpuChart','gpuChart','loadChart','memChart','cputempChart','swapChart',
-               'psiCpuChart','psiIoChart','psiMemChart'];
-  ids.forEach(id => {
-    destroyChart(id);
-    const canvas = document.getElementById(id);
-    if (!canvas) return;
-    const box = canvas.closest('.chart-box');
-    // Remove any existing placeholder
-    const old = box?.querySelector('.no-data');
-    if (old) old.remove();
-    // Add placeholder if box exists
-    if (box && !box.querySelector('.no-data')) {
-      const div = document.createElement('div');
-      div.className = 'no-data';
-      div.style.cssText = 'text-align:center;padding:40px 0;color:var(--text-muted);font-size:13px;';
-      div.textContent = 'No data for this time range';
-      canvas.style.display = 'none';
-      box.appendChild(div);
-      // Store reference to restore
-      canvas._placeholder = div;
-    }
-  });
-}
-
-function restoreChartCanvas(canvasId) {
-  const canvas = document.getElementById(canvasId);
-  if (canvas && canvas._placeholder) {
-    canvas._placeholder.remove();
-    canvas._placeholder = null;
-    canvas.style.display = '';
+  if (rows.some(r => r.psi_cpu_some_avg10 != null)) {
+    makeChart('psiCpuChart', buildDatasets(rows, {
+      'some_avg10': r=>r.psi_cpu_some_avg10, 'some_avg60': r=>r.psi_cpu_some_avg60, 'some_avg300': r=>r.psi_cpu_some_avg300,
+    }, range));
+    makeChart('psiIoChart', buildDatasets(rows, {
+      'some_avg10': r=>r.psi_io_some_avg10, 'some_avg60': r=>r.psi_io_some_avg60, 'some_avg300': r=>r.psi_io_some_avg300,
+    }, range));
+    makeChart('psiMemChart', buildDatasets(rows, {
+      'some_avg10': r=>r.psi_mem_some_avg10, 'some_avg60': r=>r.psi_mem_some_avg60, 'some_avg300': r=>r.psi_mem_some_avg300,
+    }, range));
   }
 }
 
-function loadPsiCharts(rows, range) {
-  const hasPsi = rows.some(r => r.psi_cpu_some_avg10 != null);
-  if (!hasPsi) return;
-
-  destroyChart('psiCpuChart');
-  const psiCpuData = mapRows(rows, 'ts', {
-    'some_avg10': r => r.psi_cpu_some_avg10,
-    'some_avg60': r => r.psi_cpu_some_avg60,
-    'some_avg300': r => r.psi_cpu_some_avg300,
-  }, range);
-  charts.psiCpuChart = createChart('psiCpuChart', {
-    type: 'line', data: { labels: psiCpuData.labels, datasets: psiCpuData.datasets },
-    options: { scales: { y: { title: { display: true, text: '%', color: '#8b949e' } } } }
-  });
-
-  destroyChart('psiIoChart');
-  const psiIoData = mapRows(rows, 'ts', {
-    'some_avg10': r => r.psi_io_some_avg10,
-    'some_avg60': r => r.psi_io_some_avg60,
-    'some_avg300': r => r.psi_io_some_avg300,
-  }, range);
-  charts.psiIoChart = createChart('psiIoChart', {
-    type: 'line', data: { labels: psiIoData.labels, datasets: psiIoData.datasets },
-    options: { scales: { y: { title: { display: true, text: '%', color: '#8b949e' } } } }
-  });
-
-  destroyChart('psiMemChart');
-  const psiMemData = mapRows(rows, 'ts', {
-    'some_avg10': r => r.psi_mem_some_avg10,
-    'some_avg60': r => r.psi_mem_some_avg60,
-    'some_avg300': r => r.psi_mem_some_avg300,
-  }, range);
-  charts.psiMemChart = createChart('psiMemChart', {
-    type: 'line', data: { labels: psiMemData.labels, datasets: psiMemData.datasets },
-    options: { scales: { y: { title: { display: true, text: '%', color: '#8b949e' } } } }
-  });
-}
-
-// ─── Guest table ───────────────────────────────────────────────────────
 async function loadGuestTable() {
-  const guests = await fetchJSON(apiUrl('/api/guests'));
+  let guests;
+  try { guests = await fetchJSON(apiUrl('/api/guests')); } catch(e) { return; }
   if (!guests) return;
 
   const tbody = document.getElementById('guest-tbody');
   tbody.innerHTML = guests.map(g => {
-    const cpuStr = g.cpu_host_pct != null ? g.cpu_host_pct.toFixed(1) + '%' : '<span class="value-null">-</span>';
-    const memStr = g.mem_pct != null ? g.mem_pct.toFixed(1) + '%' : '<span class="value-null">-</span>';
-    const netIn = formatBps(g.netin_bps);
-    const netOut = formatBps(g.netout_bps);
-    const diskR = formatBps(g.diskread_bps);
-    const diskW = formatBps(g.diskwrite_bps);
-    const statusCls = g.status === 'running' ? 'running' : (g.status === 'stopped' ? 'stopped' : 'other');
-    return `<tr data-vmid="${g.vmid}" data-type="${g.guest_type}" class="${selectedGuest && selectedGuest.vmid === g.vmid && selectedGuest.type === g.guest_type ? 'selected' : ''}">
-      <td>${g.vmid}</td><td>${g.guest_type}</td><td>${g.name || '-'}</td>
-      <td><span class="status-dot ${statusCls}"></span>${g.status}</td>
-      <td>${cpuStr}</td><td>${memStr}</td><td>${netIn}</td><td>${netOut}</td><td>${diskR}</td><td>${diskW}</td>
+    const cpu = g.cpu_host_pct!=null?g.cpu_host_pct.toFixed(1)+'%':'<span class="value-null">-</span>';
+    const mem = g.mem_pct!=null?g.mem_pct.toFixed(1)+'%':'<span class="value-null">-</span>';
+    const fb = v => v==null?'<span class="value-null">-</span>':(v>1e9?(v/1e9).toFixed(1)+'G':(v>1e6?(v/1e6).toFixed(1)+'M':(v>1e3?(v/1e3).toFixed(1)+'K':v.toFixed(0))));
+    const sc = g.status==='running'?'running':(g.status==='stopped'?'stopped':'other');
+    return `<tr data-vmid="${g.vmid}" data-type="${g.guest_type}" class="${selectedGuest&&selectedGuest.vmid===g.vmid&&selectedGuest.type===g.guest_type?'selected':''}">
+      <td>${g.vmid}</td><td>${g.guest_type}</td><td>${g.name||'-'}</td>
+      <td><span class="status-dot ${sc}"></span>${g.status}</td>
+      <td>${cpu}</td><td>${mem}</td><td>${fb(g.netin_bps)}</td><td>${fb(g.netout_bps)}</td><td>${fb(g.diskread_bps)}</td><td>${fb(g.diskwrite_bps)}</td>
     </tr>`;
   }).join('');
 
   tbody.querySelectorAll('tr').forEach(tr => {
     tr.addEventListener('click', () => {
-      const vmid = parseInt(tr.dataset.vmid);
-      const type = tr.dataset.type;
-      if (selectedGuest && selectedGuest.vmid === vmid && selectedGuest.type === type) {
+      const vmid = parseInt(tr.dataset.vmid), type = tr.dataset.type;
+      if (selectedGuest && selectedGuest.vmid===vmid && selectedGuest.type===type) {
         selectedGuest = null;
         document.getElementById('drilldown-section').classList.remove('visible');
       } else {
-        selectedGuest = { vmid, type };
-        document.getElementById('drilldown-title').textContent = `Guest Detail: ${type} ${vmid}`;
+        selectedGuest = {vmid,type};
+        document.getElementById('drilldown-title').textContent = 'Guest Detail: '+type+' '+vmid;
         document.getElementById('drilldown-section').classList.add('visible');
         loadGuestCharts(vmid);
       }
@@ -574,127 +469,75 @@ async function loadGuestTable() {
   });
 }
 
-function formatBps(bps) {
-  if (bps == null) return '<span class="value-null">-</span>';
-  if (bps > 1e9) return (bps/1e9).toFixed(1) + ' G';
-  if (bps > 1e6) return (bps/1e6).toFixed(1) + ' M';
-  if (bps > 1e3) return (bps/1e3).toFixed(1) + ' K';
-  return bps.toFixed(0) + ' ';
-}
-
-// ─── Guest drill-down charts ───────────────────────────────────────────
 async function loadGuestCharts(vmid) {
-  const { from, to } = buildTimeParams(currentRange);
-  const url = `/api/guests/${vmid}/range?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
-  const rows = await fetchJSON(apiUrl(url));
-  if (!rows || !rows.length) return;
+  ['guestCpuChart','guestMemChart','guestNetChart','guestDiskChart'].forEach(_destroy);
+  const {from,to} = buildTimeParams(currentRange);
+  let rows;
+  try { rows = await fetchJSON(apiUrl('/api/guests/'+vmid+'/range?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to))); }
+  catch(e) { return; }
+  if (!rows||!rows.length) return;
 
-  const range = currentRange;
-
-  destroyChart('guestCpuChart');
-  const cpuData = mapRows(rows, 'ts', {
-    'cpu': r => r.cpu_host_pct,
-    'cpu_of_alloc': r => r.cpu_of_allocated_pct,
-  }, range);
-  charts.guestCpuChart = createChart('guestCpuChart', {
-    type: 'line', data: { labels: cpuData.labels, datasets: cpuData.datasets },
-    options: { scales: { y: { title: { display: true, text: '%', color: '#8b949e' } } } }
-  });
-
-  destroyChart('guestMemChart');
-  const memData = mapRows(rows, 'ts', {
-    'mem': r => r.mem_bytes ? +(r.mem_bytes / 1048576).toFixed(1) : null,
-  }, range);
-  charts.guestMemChart = createChart('guestMemChart', {
-    type: 'line', data: { labels: memData.labels, datasets: memData.datasets.map(d => ({...d, fill: true})) },
-    options: { scales: { y: { title: { display: true, text: 'MiB', color: '#8b949e' }, min: 0 } } }
-  });
-
-  destroyChart('guestNetChart');
-  const netData = mapRows(rows, 'ts', {
-    'netin': r => r.netin_bps, 'netout': r => r.netout_bps,
-  }, range);
-  charts.guestNetChart = createChart('guestNetChart', {
-    type: 'line', data: { labels: netData.labels, datasets: netData.datasets },
-    options: { scales: { y: { title: { display: true, text: 'B/s', color: '#8b949e' } } } }
-  });
-
-  destroyChart('guestDiskChart');
-  const diskData = mapRows(rows, 'ts', {
-    'diskread': r => r.diskread_bps, 'diskwrite': r => r.diskwrite_bps,
-  }, range);
-  charts.guestDiskChart = createChart('guestDiskChart', {
-    type: 'line', data: { labels: diskData.labels, datasets: diskData.datasets },
-    options: { scales: { y: { title: { display: true, text: 'B/s', color: '#8b949e' } } } }
-  });
+  const r = currentRange;
+  makeChart('guestCpuChart', buildDatasets(rows, {
+    'cpu': r=>r.cpu_host_pct, 'cpu_of_alloc': r=>r.cpu_of_allocated_pct,
+  }, r));
+  makeChart('guestMemChart', buildDatasets(rows, {
+    'mem': r=>r.mem_bytes?+(r.mem_bytes/1048576).toFixed(1):null,
+  }, r), { y: { beginAtZero: true } });
+  makeChart('guestNetChart', buildDatasets(rows, {
+    'netin': r=>r.netin_bps, 'netout': r=>r.netout_bps,
+  }, r));
+  makeChart('guestDiskChart', buildDatasets(rows, {
+    'diskread': r=>r.diskread_bps, 'diskwrite': r=>r.diskwrite_bps,
+  }, r));
 }
 
-// ─── Load all ───────────────────────────────────────────────────────────
 async function loadAll() {
   await loadHealth();
   await loadHostCharts(currentRange);
   await loadGuestTable();
   if (selectedGuest) {
-    document.getElementById('drilldown-title').textContent =
-      `Guest Detail: ${selectedGuest.type} ${selectedGuest.vmid}`;
+    document.getElementById('drilldown-title').textContent = 'Guest Detail: '+selectedGuest.type+' '+selectedGuest.vmid;
     document.getElementById('drilldown-section').classList.add('visible');
     await loadGuestCharts(selectedGuest.vmid);
   }
 }
 
-// ─── Time range controls ───────────────────────────────────────────────
-const allRangeButtons = document.querySelectorAll('.time-controls button[data-range]');
-const customRangeDiv = document.getElementById('custom-range');
-const rangeHint = document.getElementById('range-hint');
-const refreshIndicator = document.getElementById('refresh-indicator');
-
+// ─── Time range buttons ────────────────────────────────────────────────
 function setActiveButton(range) {
-  allRangeButtons.forEach(b => b.classList.remove('active'));
-  const btn = document.querySelector(`.time-controls button[data-range="${range}"]`);
+  document.querySelectorAll('.time-controls button[data-range]').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector('.time-controls button[data-range="'+range+'"]');
   if (btn) btn.classList.add('active');
 }
-
-function isLiveRange(range) {
-  return range === '15m' || range === '1h' || range === '6h' || range === '24h';
-}
-
-function updateRefreshState(range) {
+function isLiveRange(range) { return range==='15m'||range==='1h'||range==='6h'||range==='24h'; }
+function updateRefresh(range) {
+  const el = document.getElementById('refresh-indicator');
   if (isLiveRange(range)) {
-    if (range === '15m') REFRESH_S = 10;
-    else if (range === '1h') REFRESH_S = 15;
-    else REFRESH_S = 30;
-    refreshIndicator.textContent = `⟳ ${REFRESH_S}s`;
-    refreshIndicator.classList.remove('paused');
+    REFRESH_S = range==='15m'?10:(range==='1h'?15:30);
+    el.textContent = '⟳ '+REFRESH_S+'s'; el.classList.remove('paused');
   } else {
-    REFRESH_S = 300; // 5 min slow poll for historical views
-    refreshIndicator.textContent = '⟳ paused (historical)';
-    refreshIndicator.classList.add('paused');
+    REFRESH_S = 300;
+    el.textContent = '⟳ paused (historical)'; el.classList.add('paused');
   }
   startRefresh();
 }
 
-allRangeButtons.forEach(btn => {
+document.querySelectorAll('.time-controls button[data-range]').forEach(btn => {
   btn.addEventListener('click', async () => {
     const range = btn.dataset.range;
     if (range === 'custom') {
-      // Toggle custom range picker
-      customRangeDiv.classList.toggle('visible');
-      if (customRangeDiv.classList.contains('visible')) {
-        // Set default values
-        const now = new Date();
-        document.getElementById('to-picker').value = now.toISOString().slice(0, 16);
-        now.setHours(now.getHours() - 24);
-        document.getElementById('from-picker').value = now.toISOString().slice(0, 16);
+      document.getElementById('custom-range').classList.toggle('visible');
+      if (document.getElementById('custom-range').classList.contains('visible')) {
+        const now = new Date(); document.getElementById('to-picker').value = now.toISOString().slice(0,16);
+        now.setHours(now.getHours()-24); document.getElementById('from-picker').value = now.toISOString().slice(0,16);
       }
       return;
     }
-
     setActiveButton(range);
-    customRangeDiv.classList.remove('visible');
-    currentRange = range;
-    customFrom = null; customTo = null;
-    updateRefreshState(range);
-    rangeHint.textContent = '';
+    document.getElementById('custom-range').classList.remove('visible');
+    currentRange = range; customFrom = null; customTo = null;
+    updateRefresh(range);
+    document.getElementById('range-hint').textContent = '';
     await loadAll();
   });
 });
@@ -702,58 +545,28 @@ allRangeButtons.forEach(btn => {
 document.getElementById('btn-apply-custom').addEventListener('click', async () => {
   customFrom = document.getElementById('from-picker').value;
   customTo = document.getElementById('to-picker').value;
-  if (!customFrom || !customTo) {
-    rangeHint.textContent = 'Please select both from and to dates.';
-    return;
-  }
-  setActiveButton('custom');
-  currentRange = 'custom';
-  updateRefreshState('custom');
-  const fromD = new Date(customFrom);
-  const toD = new Date(customTo);
-  rangeHint.textContent = `${fromD.toLocaleDateString()} ${fromD.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} — ${toD.toLocaleDateString()} ${toD.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`;
+  if (!customFrom||!customTo) return;
+  setActiveButton('custom'); currentRange = 'custom'; updateRefresh('custom');
+  const fd = new Date(customFrom), td = new Date(customTo);
+  document.getElementById('range-hint').textContent = fd.toLocaleDateString()+' '+fd.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+' — '+td.toLocaleDateString()+' '+td.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   await loadAll();
 });
 
-// ─── Auto-refresh ──────────────────────────────────────────────────────
+// ─── Refresh timer ─────────────────────────────────────────────────────
 let refreshTimer = null;
 function startRefresh() {
   if (refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = setInterval(loadAll, REFRESH_S * 1000);
+  refreshTimer = setInterval(loadAll, REFRESH_S*1000);
 }
 const urlParams = new URLSearchParams(window.location.search);
-if (urlParams.get('interval')) {
-  REFRESH_S = parseInt(urlParams.get('interval')) || 10;
-  refreshIndicator.textContent = `⟳ ${REFRESH_S}s`;
-}
+if (urlParams.get('interval')) { REFRESH_S = parseInt(urlParams.get('interval'))||10; }
 
-// ─── Status banner ──────────────────────────────────────────────────────
-function showBanner(msg, kind) {
-  const el = document.getElementById('status-banner');
-  el.textContent = msg;
-  el.style.display = 'block';
-  const colors = {
-    error: ['#f8514922','#f85149','#f85149'],
-    warn:  ['#d2991d22','#d2991d','#d2991d'],
-    info:  ['#58a6ff22','#58a6ff','#58a6ff'],
-  };
-  const [bg,border,text] = colors[kind] || colors.error;
-  el.style.background = bg;
-  el.style.borderColor = border;
-  el.style.color = text;
-}
-function hideBanner() { document.getElementById('status-banner').style.display = 'none'; }
-
-// ─── Init ───────────────────────────────────────────────────────────────
-if (typeof Chart === 'undefined') {
-  showBanner('Chart.js failed to load from CDN — no internet access from this browser? Charts cannot render.', 'error');
-} else {
-  hideBanner();
-  loadAll().then(() => startRefresh()).catch(e => {
-    showBanner('Failed to load dashboard data: ' + e.message, 'error');
-    console.error(e);
-  });
-}
+// ─── Go ────────────────────────────────────────────────────────────────
+loadAll().then(() => startRefresh()).catch(e => {
+  showBanner('Startup error: ' + e.message, 'error');
+  diag('FATAL: ' + e.message);
+  console.error(e);
+});
 </script>
 </body>
 </html>

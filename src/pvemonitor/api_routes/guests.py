@@ -10,13 +10,13 @@ router = APIRouter(prefix="/api/guests", tags=["guests"])
 
 
 def _parse_time(value: str) -> str:
-    """Parse a time parameter into an SQL expression."""
+    """Parse a time parameter into an SQL expression returning epoch seconds."""
     value = value.strip()
     if value == "now":
-        return "datetime('now')"
+        return "CAST(strftime('%s', 'now') AS INTEGER)"
     if value.startswith("-"):
-        return f"datetime('now', '{value}')"
-    return f"'{value}'"
+        return f"CAST(strftime('%s', 'now', '{value}') AS INTEGER)"
+    return f"CAST(strftime('%s', '{value}') AS INTEGER)"
 
 
 @router.get("")
@@ -74,9 +74,9 @@ async def guest_range(
                 FROM guest_samples gs
                 JOIN samples s ON s.id = gs.sample_id
                 WHERE gs.vmid = ?
-                  AND s.ts >= {from_sql}
-                  AND s.ts <= {to_sql}
-                ORDER BY s.ts ASC""",
+                  AND s.epoch_s >= {from_sql}
+                  AND s.epoch_s <= {to_sql}
+                ORDER BY s.epoch_s ASC""",
             (vmid,),
         ).fetchall()
 

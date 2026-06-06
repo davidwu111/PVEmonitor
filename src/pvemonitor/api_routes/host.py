@@ -31,16 +31,18 @@ VALID_HOST_FIELDS: set[str] = {
 
 
 def _parse_time(value: str) -> str:
-    """Parse a time parameter into an SQL expression.
+    """Parse a time parameter into an SQL expression returning epoch seconds.
 
     Accepts 'now', relative ('-2h', '-30m'), or ISO 8601.
+    Returns a CAST(strftime(...) AS INTEGER) expression for epoch comparison.
     """
     value = value.strip()
     if value == "now":
-        return "datetime('now')"
+        return "CAST(strftime('%s', 'now') AS INTEGER)"
     if value.startswith("-"):
-        return f"datetime('now', '{value}')"
-    return f"'{value}'"
+        return f"CAST(strftime('%s', 'now', '{value}') AS INTEGER)"
+    # Absolute ISO 8601 — convert to epoch
+    return f"CAST(strftime('%s', '{value}') AS INTEGER)"
 
 
 def _resolve_fields(fields: str | None) -> list[str] | None:
@@ -99,8 +101,8 @@ async def host_range(
             f"""SELECT s.ts, s.epoch_s, s.hostname, {cols}
                 FROM samples s
                 JOIN host_metrics h ON h.sample_id = s.id
-                WHERE s.ts >= {from_sql} AND s.ts <= {to_sql}
-                ORDER BY s.ts ASC"""
+                WHERE s.epoch_s >= {from_sql} AND s.epoch_s <= {to_sql}
+                ORDER BY s.epoch_s ASC"""
         ).fetchall()
 
         return [dict(r) for r in rows]

@@ -167,12 +167,10 @@ def build_guest_metrics(
     # Populate from inventory first (always available)
     metrics["maxcpu"] = parse_int(inventory_item.get("maxcpu"))
     metrics["maxmem_bytes"] = parse_int(inventory_item.get("maxmem"))
-    if metrics["maxmem_bytes"] is not None:
-        metrics["maxmem_bytes"] *= 1024  # pvesh reports memory in KiB for some endpoints
 
     mem_val = parse_int(inventory_item.get("mem"))
     if mem_val is not None:
-        metrics["mem_bytes"] = mem_val * 1024
+        metrics["mem_bytes"] = mem_val
 
     # Memory percentage
     if metrics["mem_bytes"] and metrics["maxmem_bytes"] and metrics["maxmem_bytes"] > 0:
@@ -227,10 +225,14 @@ def build_guest_metrics(
 
     # CPU from detail
     detail_cpu = parse_float(details.get("cpu"))
-    if detail_cpu is not None:
-        metrics["cpu_host_pct"] = round(detail_cpu * 100, 2)
+    inventory_cpu = parse_float(inventory_item.get("cpu"))
+    effective_cpu = detail_cpu
+    if inventory_cpu is not None and (effective_cpu is None or (effective_cpu == 0 and inventory_cpu > 0)):
+        effective_cpu = inventory_cpu
+    if effective_cpu is not None:
+        metrics["cpu_host_pct"] = round(effective_cpu * 100, 2)
         if metrics["maxcpu"] and metrics["maxcpu"] > 0:
-            metrics["cpu_of_allocated_pct"] = round((detail_cpu / metrics["maxcpu"]) * 100, 2)
+            metrics["cpu_of_allocated_pct"] = round((effective_cpu / metrics["maxcpu"]) * 100, 2)
 
     # Cumulative counters from detail (prefer over inventory)
     detail_diskread = parse_int(details.get("diskread"))

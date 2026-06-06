@@ -195,21 +195,24 @@ def _collect_memory() -> dict[str, int | None]:
             meminfo[key] = val * 1024  # convert kB to bytes
 
     result["mem_total_bytes"] = meminfo.get("MemTotal")
-    result["mem_free_bytes"] = meminfo.get("MemFree")
-    if result["mem_total_bytes"] and result["mem_free_bytes"]:
-        # Used = Total - Free - Buffers - Cached (approximate)
-        used = result["mem_total_bytes"] - result["mem_free_bytes"]
-        # A more accurate "used" subtracts buffers and cached
-        # But for monitoring, let's compute available-based used:
-        available = meminfo.get("MemAvailable")
+    raw_mem_free = meminfo.get("MemFree")
+    available = meminfo.get("MemAvailable")
+    if result["mem_total_bytes"] is not None:
         if available is not None and available <= result["mem_total_bytes"]:
+            # Match Proxmox's user-facing memory accounting: used + available = total.
             result["mem_used_bytes"] = result["mem_total_bytes"] - available
-        else:
+            result["mem_free_bytes"] = available
+        elif raw_mem_free is not None:
             # fallback: rough estimate including buffers/cached
+            used = result["mem_total_bytes"] - raw_mem_free
             buffers = meminfo.get("Buffers", 0)
             cached = meminfo.get("Cached", 0)
             sreclaimable = meminfo.get("SReclaimable", 0)
             result["mem_used_bytes"] = used - buffers - cached - sreclaimable
+            if result["mem_used_bytes"] is not None:
+                result["mem_free_bytes"] = max(result["mem_total_bytes"] - result["mem_used_bytes"], 0)
+            else:
+                result["mem_free_bytes"] = raw_mem_free
 
     result["swap_total_bytes"] = meminfo.get("SwapTotal")
     swap_free = meminfo.get("SwapFree")

@@ -279,7 +279,7 @@ const COLORS = {
   'us':'#58a6ff','sy':'#f0883e','wa':'#f85149','id':'#6e7681',
   'busy':'#a371f7','temp':'#f85149','vram':'#3fb950',
   'load1':'#58a6ff','load5':'#d2991d','load15':'#f85149',
-  'used':'#f0883e','free':'#3fb950','swap':'#f85149',
+  'used':'#f0883e','available':'#3fb950','swap':'#f85149',
   'netin':'#58a6ff','netout':'#3fb950','diskread':'#d2991d','diskwrite':'#f0883e',
   'cpu':'#58a6ff','cpu_of_alloc':'#a371f7','mem':'#3fb950',
   'some_avg10':'#58a6ff','some_avg60':'#3fb950','some_avg300':'#8b949e',
@@ -438,7 +438,12 @@ async function loadHostCharts(range) {
   // Memory
   makeChart('memChart', buildDatasets(rows, {
     'used': r=>r.mem_used_bytes != null ? +(r.mem_used_bytes/1073741824).toFixed(2) : null,
-    'free': r=>r.mem_free_bytes != null ? +(r.mem_free_bytes/1073741824).toFixed(2) : null,
+    'available': r=> {
+      if (r.mem_total_bytes != null && r.mem_used_bytes != null) {
+        return +((r.mem_total_bytes - r.mem_used_bytes)/1073741824).toFixed(2);
+      }
+      return r.mem_free_bytes != null ? +(r.mem_free_bytes/1073741824).toFixed(2) : null;
+    },
   }, range), { y: { beginAtZero: true } });
 
   // CPU temp

@@ -53,7 +53,7 @@
     border-radius: 8px; padding: 16px;
   }
   .chart-box h2 { font-size: 14px; font-weight: 600; margin-bottom: 8px; color: var(--text-muted); }
-  .chart-box canvas { width: 100% !important; max-height: 280px; }
+  .chart-box canvas { width: 100% !important; height: 260px !important; }
   .full-width { grid-column: 1 / -1; }
   .guest-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .guest-table th {
@@ -318,8 +318,7 @@ function makeChart(canvasId, datasets, scaleOverrides) {
       type: 'line',
       data: { labels: datasets.labels, datasets: datasets.datasets },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: false,
         animation: false,
         interaction: { mode: 'nearest', axis: 'x', intersect: false },
         plugins: {

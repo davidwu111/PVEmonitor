@@ -198,7 +198,7 @@ def insert_guest_sample(
                ?, ?, ?, ?,
                ?, ?, ?, ?,
                ?, ?, ?, ?,
-               ?, ?, ?, ?
+               ?, ?, ?, ?, ?
            )""",
         (
             sample_id, vmid, guest_type,

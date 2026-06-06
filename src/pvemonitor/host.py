@@ -246,7 +246,7 @@ def _collect_psi() -> dict[str, float | None]:
     psi_files = {
         "cpu": "/proc/pressure/cpu",
         "io": "/proc/pressure/io",
-        "memory": "/proc/pressure/memory",
+        "mem": "/proc/pressure/memory",
     }
 
     for source, path in psi_files.items():

@@ -1,0 +1,40 @@
+# PVEmonitor configuration
+# All paths are relative to PVEMONITOR_HOME unless absolute.
+
+monitor:
+  sample_interval_s: 10
+  hostname_override: null       # defaults to socket.gethostname()
+  collection_timeout_s: 25      # max time for one full collection run
+
+paths:
+  db: runtime/db/metrics.sqlite3
+  log: runtime/logs/collector.log
+  lock: runtime/locks/collector.lock
+
+collection:
+  host_enabled: true
+  guests_enabled: true
+  gpu_enabled: true
+  psi_enabled: true
+  top_process_enabled: true
+
+gpu:
+  rocm_smi_bin: /usr/bin/rocm-smi
+  sysfs_fallback: true
+
+rate_calculation:
+  max_interval_s: 120           # max seconds between samples for valid rate calc
+
+logging:
+  level: INFO
+  max_log_bytes: 10485760       # 10 MB
+  backup_count: 5
+
+api:
+  host: "0.0.0.0"
+  port: 8806
+  auth_token: ""                # empty = no auth; set to shared secret for LAN access control
+
+# Stale lock detection
+locking:
+  stale_timeout_multiplier: 5   # stale = older than 5 × sample_interval_s

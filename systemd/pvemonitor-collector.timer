@@ -1,0 +1,13 @@
+[Unit]
+Description=PVEmonitor collector timer (10s interval)
+Requires=pvemonitor-collector.service
+
+[Timer]
+# Fire 10s after the service FINISHES (prevents stacking)
+OnUnitActiveSec=10s
+AccuracySec=1s
+# Fire once on boot, after 30s delay
+OnBootSec=30s
+
+[Install]
+WantedBy=timers.target

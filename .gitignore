@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+
+# Runtime data (generated at deploy time)
+runtime/db/*.sqlite3*
+runtime/logs/*.log*
+runtime/backups/*
+runtime/locks/*
+runtime/exports/*
+!runtime/*/
+!runtime/*/.gitkeep
+!runtime/*/*/
+!runtime/*/*/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store

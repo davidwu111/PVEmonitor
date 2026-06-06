@@ -1,0 +1,34 @@
+# PVEmonitor thresholds
+# Thresholds are defined here for future alerting.
+# In v1, the collector logs warnings at threshold crossings but does not take action.
+# Alert enforcement (email, webhook, etc.) is planned for Phase 2.
+
+host:
+  cpu_temp_c:
+    warn: 75
+    critical: 85
+  cpu_usage_pct:
+    warn: 80
+    critical: 90
+    sustained_minutes: 5
+  iowait_pct:
+    warn: 5
+    critical: 10
+  rootfs_free_pct:
+    warn: 20
+    critical: 10
+
+gpu:
+  temp_c:
+    warn: 75
+    critical: 85
+
+memory:
+  swap_used_bytes:
+    warn_any: true               # any swap usage is a warning
+
+guest:
+  cpu_of_allocated_pct:
+    warn: 90
+    critical: 95
+    sustained_minutes: 10

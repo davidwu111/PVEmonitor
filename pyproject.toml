@@ -1,0 +1,15 @@
+[project]
+name = "pvemonitor"
+version = "0.1.0"
+requires-python = ">=3.11"
+description = "Lightweight Proxmox VE host and guest monitor for AI workloads"
+
+[project.scripts]
+pvemonitor = "pvemonitor.cli:main"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

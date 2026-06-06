@@ -1,0 +1,4 @@
+GPU[0] : Temperature (Edge): 48.0 C
+GPU[0] : Temperature (Junction): 52.0 C
+GPU[0] : GPU use (%): 87.0 %
+GPU[0] : Average Graphics Package Power (W): 45.0 W

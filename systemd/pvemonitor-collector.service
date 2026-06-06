@@ -1,0 +1,16 @@
+[Unit]
+Description=PVEmonitor collector (one-shot)
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment=PYTHONUNBUFFERED=1
+Environment=PVEMONITOR_HOME=@@PVEMONITOR_HOME@@
+ExecStart=@@PVEMONITOR_HOME@@/.venv/bin/python -m pvemonitor collect
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=30
+
+[Install]
+WantedBy=default.target

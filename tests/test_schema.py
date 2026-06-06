@@ -20,8 +20,10 @@ class TestSchemaCreation:
             "schema_version",
             "samples",
             "host_metrics",
+            "host_rollups",
             "guests",
             "guest_samples",
+            "guest_rollups",
             "collector_errors",
         }
         assert expected.issubset(tables)
@@ -75,8 +77,10 @@ class TestSchemaCreation:
         expected = {
             "idx_samples_ts",
             "idx_samples_epoch",
+            "idx_host_rollups_resolution_epoch",
             "idx_guest_samples_vmid_type_sample",
             "idx_guest_samples_status",
+            "idx_guest_rollups_vmid_type_resolution_epoch",
         }
         assert expected.issubset(indexes)
 

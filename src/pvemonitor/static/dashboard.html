@@ -243,6 +243,7 @@ const diagState = {
   latestSampleTs: null,
   guestsTotal: null,
   guestsRunning: null,
+  seriesSource: null,
   lastError: null,
 };
 
@@ -250,6 +251,13 @@ function fmtClock(ts) {
   if (!ts) return '-';
   const d = ts instanceof Date ? ts : new Date(ts);
   return Number.isNaN(d.getTime()) ? String(ts) : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function describeSeriesSource(rows) {
+  const resolution = rows?.[0]?._resolution_s;
+  if (resolution === 300) return '5m rollup';
+  if (resolution === 60) return '1m rollup';
+  return 'raw';
 }
 
 function secondsUntilNextRefresh() {
@@ -287,6 +295,7 @@ function renderDiag() {
   if (diagState.rows != null) parts.push(`rows ${diagState.rows}`);
   if (diagState.charts != null) parts.push(`charts ${diagState.charts}`);
   if (diagState.totalSamples != null) parts.push(`samples ${diagState.totalSamples}`);
+  if (diagState.seriesSource) parts.push(`source ${diagState.seriesSource}`);
   if (diagState.guestsTotal != null) {
     const running = diagState.guestsRunning != null ? diagState.guestsRunning : 0;
     parts.push(`guests ${running}/${diagState.guestsTotal} running`);
@@ -537,7 +546,7 @@ async function loadHostCharts(range) {
   hideBanner();
 
   const { from, to } = buildTimeParams(range);
-  const url = apiUrl('/api/host/range?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to));
+  const url = apiUrl('/api/host/range?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to) + '&resolution=auto');
   diag('fetching host range ' + range, { rows: null, charts: 0, lastError: null });
 
   let rows;
@@ -614,7 +623,12 @@ async function loadHostCharts(range) {
     }, range));
   }
   const chartCount = Object.keys(_charts).length;
-  setDiagState({ rows: rows.length, charts: chartCount, latestSampleTs: rows[rows.length - 1]?.ts || diagState.latestSampleTs });
+  setDiagState({
+    rows: rows.length,
+    charts: chartCount,
+    latestSampleTs: rows[rows.length - 1]?.ts || diagState.latestSampleTs,
+    seriesSource: describeSeriesSource(rows),
+  });
   return rows;
 }
 
@@ -660,7 +674,7 @@ async function loadGuestCharts(vmid) {
   ['guestCpuChart','guestMemChart','guestNetChart','guestDiskChart'].forEach(_destroy);
   const {from,to} = buildTimeParams(currentRange);
   let rows;
-  try { rows = await fetchJSON(apiUrl('/api/guests/'+vmid+'/range?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to))); }
+  try { rows = await fetchJSON(apiUrl('/api/guests/'+vmid+'/range?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to)+'&resolution=auto')); }
   catch(e) { return; }
   if (!rows||!rows.length) return;
 

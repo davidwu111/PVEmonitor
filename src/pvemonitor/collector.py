@@ -36,6 +36,7 @@ from .guests import (
 from .host import collect_host_metrics
 from .locking import acquire_lock, release_lock
 from .rates import compute_guest_rates
+from .rollups import maybe_backfill_rollups, maybe_run_retention, refresh_rollups_for_sample
 from .util import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -230,7 +231,22 @@ def run_collection(
                     insert_error(conn, sample_id, f"guest:{vmid}", str(exc), vmid, gtype)
                     error_count += 1
 
-            # 9. Commit transaction
+            # 9. Maintain rollups and retention before commit
+            guest_keys = [(item["vmid"], item["type"]) for item, _ in guest_metrics_list]
+            try:
+                backfilled = maybe_backfill_rollups(conn)
+                refresh_rollups_for_sample(conn, epoch_s, guest_keys)
+                retention_stats = maybe_run_retention(conn, config, sample_id, epoch_s)
+                if backfilled:
+                    logger.info("Rollup backfill completed")
+                if retention_stats:
+                    logger.info("Retention maintenance summary: %s", retention_stats)
+            except Exception as exc:
+                logger.error("Rollup/retention maintenance failed: %s", exc)
+                insert_error(conn, sample_id, "maintenance", str(exc))
+                error_count += 1
+
+            # 10. Commit transaction
             conn.commit()
 
             running_count = sum(1 for _, m in guest_metrics_list if m.get("is_running"))
@@ -244,8 +260,8 @@ def run_collection(
             logger.info("Collection complete: %s", summary)
             print(summary)
 
-            # 10. Periodic WAL maintenance
-            maybe_checkpoint(conn)
+            # 11. Periodic WAL maintenance
+            maybe_checkpoint(conn, sample_id)
 
         finally:
             conn.close()

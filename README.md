@@ -105,9 +105,9 @@ so up/down history is always queryable.
 | **GPU monitoring** | Multi-vendor: AMD (rocm-smi), NVIDIA (nvidia-smi), sysfs for basic metrics |
 | **Guest monitoring** | Per-VM/LXC CPU, memory, disk I/O rates, network throughput |
 | **Pressure Stall (PSI)** | CPU, IO, memory pressure (some/full, avg10/60/300) |
-| **SQLite storage** | WAL mode, migration-tracked schema, FK cascades, indexed for time-range queries |
+| **SQLite storage** | WAL mode, migration-tracked schema, indexed for time-range queries, raw retention, and rollups |
 | **REST API** | FastAPI on :8806, optional shared-secret auth, CORS enabled |
-| **Dashboard** | Single-page Chart.js app — live view + historical (yesterday, 7d, 30d, custom range) |
+| **Dashboard** | Single-page Chart.js app — live view + historical (yesterday, 7d, 30d, custom range) with automatic raw/rollup selection |
 | **Systemd integration** | Timer-driven collection (10s), persistent API service, daily maintenance |
 | **Safe collection** | Non-overlap lock with stale detection, subprocess timeouts, partial failure tolerance |
 | **Rate calculation** | Disk/network bps from cumulative counters with max interval guard, counter reset detection |
@@ -139,6 +139,21 @@ so up/down history is always queryable.
 | `healthcheck.sh` | Health check (exit 0/1/2) |
 | `backup-db.sh` | SQLite .backup with 7-day retention |
 
+## Retention and rollups
+
+Default behavior:
+- raw `samples` + `host_metrics` + `guest_samples`: keep 30 days
+- 1-minute host/guest rollups: keep 90 days
+- 5-minute host/guest rollups: keep 365 days
+- pruning runs roughly hourly (`maintenance_interval_samples: 360` at 10s sampling)
+
+Range selection behavior:
+- `<= 24h`: raw samples
+- `> 24h` and `<= 7d`: 1-minute rollups
+- `> 7d`: 5-minute rollups
+
+The dashboard uses API auto-resolution selection by default, so long-range charts stay responsive while recent views remain full-resolution.
+
 ## Known limitations
 
 - **Single GPU**: The host_metrics table stores only the first GPU's metrics.
@@ -149,7 +164,8 @@ so up/down history is always queryable.
 - **GPU passthrough**: If a GPU is fully passed through to a VM, host-side
   GPU metrics for that device will be unavailable.
 - **Downsampling**: For very long time ranges (30d+) with 10s sampling,
-  chart rendering may slow. Server-side downsampling is planned.
+  the API/dashboard now switches automatically to rollups (1m, then 5m).
+  Adjust retention windows in `config/monitor.yaml` if you want longer raw history.
 
 ## Documentation
 

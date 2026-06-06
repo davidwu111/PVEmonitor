@@ -39,3 +39,9 @@ api:
 # Stale lock detection
 locking:
   stale_timeout_multiplier: 5   # stale = older than 5 × sample_interval_s
+
+retention:
+  raw_days: 30                  # keep full-resolution samples for 30 days
+  rollup_1m_days: 90            # 1-minute rollups for medium-range charts
+  rollup_5m_days: 365           # 5-minute rollups for long-range charts
+  maintenance_interval_samples: 360  # prune roughly hourly at 10s sampling

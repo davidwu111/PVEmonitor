@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import re
 import time
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
 from ..deps import get_db
+from ..rollups import choose_series_resolution
 
 router = APIRouter(prefix="/api/host", tags=["host"])
 
-# Valid host_metrics column names (whitelist for fields parameter)
 VALID_HOST_FIELDS: set[str] = {
     "load1", "load5", "load15",
     "cpu_usage_pct", "cpu_user_pct", "cpu_system_pct", "cpu_iowait_pct", "cpu_idle_pct",
@@ -30,40 +32,93 @@ VALID_HOST_FIELDS: set[str] = {
 }
 
 
-def _parse_time(value: str) -> str:
-    """Parse a time parameter into an SQL expression returning epoch seconds.
-
-    Accepts 'now', relative ('-2h', '-30m'), or ISO 8601.
-    Uses SQLite unixepoch() (3.38+) for epoch conversion.
-    Converts compact relative format to SQLite modifier format:
-      -15m → '-15 minutes', -2h → '-2 hours', -7d → '-7 days'
-    """
+def _parse_epoch(value: str) -> int:
     value = value.strip()
     if value == "now":
-        return "unixepoch('now')"
-    if value.startswith("-"):
-        modifier = _to_sqlite_modifier(value)
-        return f"unixepoch('now', '{modifier}')"
-    return f"unixepoch('{value}')"
+        return int(time.time())
+    rel = re.match(r"^-(\d+)(m|h|d)$", value)
+    if rel:
+        amount = int(rel.group(1))
+        unit = rel.group(2)
+        scale = {"m": 60, "h": 3600, "d": 86400}[unit]
+        return int(time.time()) - (amount * scale)
 
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp())
 
-def _to_sqlite_modifier(value: str) -> str:
-    """Convert compact time format to SQLite modifier: '-15m' → '-15 minutes'."""
-    import re
-    m = re.match(r'^(-?\d+)(m|h|d)$', value)
-    if not m:
-        return value
-    unit_map = {"m": "minutes", "h": "hours", "d": "days"}
-    return f"{m.group(1)} {unit_map[m.group(2)]}"
 
 
 def _resolve_fields(fields: str | None) -> list[str] | None:
-    """Parse a comma-separated fields list, whitelisting valid columns."""
     if not fields:
         return None
     requested = {f.strip() for f in fields.split(",") if f.strip()}
     valid = [f for f in requested if f in VALID_HOST_FIELDS]
     return valid if valid else None
+
+
+
+def _resolve_resolution(resolution: str, window_s: int) -> int | None:
+    if resolution == "auto":
+        return choose_series_resolution(window_s)
+    if resolution == "raw":
+        return None
+    if resolution == "1m":
+        return 60
+    if resolution == "5m":
+        return 300
+    raise HTTPException(status_code=400, detail="resolution must be one of auto, raw, 1m, 5m")
+
+
+
+def _select_host_rows(
+    conn,
+    from_epoch: int,
+    to_epoch: int,
+    selected_fields: list[str] | None,
+    resolution: str = "auto",
+) -> list[dict]:
+    if from_epoch > to_epoch:
+        raise HTTPException(status_code=400, detail="from must be <= to")
+
+    window_s = max(0, to_epoch - from_epoch)
+    chosen_resolution = _resolve_resolution(resolution, window_s)
+    cols = ", ".join(f"h.{f}" for f in selected_fields) if selected_fields else "h.*"
+
+    def raw_rows() -> list[dict]:
+        rows = conn.execute(
+            f"""SELECT s.ts, s.epoch_s, s.hostname, {cols},
+                       NULL AS _resolution_s,
+                       1 AS _sample_count
+                FROM samples s
+                JOIN host_metrics h ON h.sample_id = s.id
+                WHERE s.epoch_s >= ? AND s.epoch_s <= ?
+                ORDER BY s.epoch_s ASC""",
+            (from_epoch, to_epoch),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    if chosen_resolution is None:
+        return raw_rows()
+
+    rows = conn.execute(
+        f"""SELECT h.ts,
+                   h.bucket_epoch_s AS epoch_s,
+                   h.hostname,
+                   {cols},
+                   h.resolution_s AS _resolution_s,
+                   h.sample_count AS _sample_count
+            FROM host_rollups h
+            WHERE h.resolution_s = ?
+              AND h.bucket_epoch_s >= ?
+              AND h.bucket_epoch_s <= ?
+            ORDER BY h.bucket_epoch_s ASC""",
+        (chosen_resolution, from_epoch, to_epoch),
+    ).fetchall()
+    if rows:
+        return [dict(r) for r in rows]
+    return raw_rows()
 
 
 @router.get("/latest")
@@ -83,7 +138,6 @@ async def host_latest():
             raise HTTPException(status_code=404, detail="No host metrics found")
 
         return dict(row)
-
     finally:
         conn.close()
 
@@ -93,47 +147,25 @@ async def host_range(
     from_: str = Query(default="-1h", alias="from"),
     to: str = Query(default="now", alias="to"),
     fields: Optional[str] = None,
+    resolution: str = Query(default="auto"),
 ):
-    """Host metrics array for a time range.
-
-    Args:
-        from_: Start time (ISO 8601 or relative like '-2h').
-        to: End time (ISO 8601 or relative, defaults to 'now').
-        fields: Comma-separated column names to limit payload.
-    """
+    """Host metrics array for a time range."""
     conn = get_db()
     try:
-        from_sql = _parse_time(from_)
-        to_sql = _parse_time(to)
-
+        from_epoch = _parse_epoch(from_)
+        to_epoch = _parse_epoch(to)
         selected_fields = _resolve_fields(fields)
-        cols = ", ".join(f"h.{f}" for f in selected_fields) if selected_fields else "h.*"
-
-        rows = conn.execute(
-            f"""SELECT s.ts, s.epoch_s, s.hostname, {cols}
-                FROM samples s
-                JOIN host_metrics h ON h.sample_id = s.id
-                WHERE s.epoch_s >= {from_sql} AND s.epoch_s <= {to_sql}
-                ORDER BY s.epoch_s ASC"""
-        ).fetchall()
-
-        return [dict(r) for r in rows]
-
+        return _select_host_rows(conn, from_epoch, to_epoch, selected_fields, resolution)
     finally:
         conn.close()
 
 
 @router.get("/summary")
 async def host_summary(window_s: int = Query(default=3600, ge=60, le=86400)):
-    """Min/max/avg for key host metrics over a time window.
-
-    Args:
-        window_s: Window size in seconds (default 3600 = 1 hour).
-    """
+    """Min/max/avg for key host metrics over a time window."""
     conn = get_db()
     try:
         cutoff_epoch = int(time.time()) - window_s
-
         metrics = [
             "gpu_temp_c", "gpu_busy_pct", "gpu_power_w", "gpu_vram_used_pct",
             "cpu_usage_pct", "cpu_temp_c",
@@ -143,7 +175,6 @@ async def host_summary(window_s: int = Query(default=3600, ge=60, le=86400)):
         ]
 
         result: dict = {"window_s": window_s, "sample_count": 0}
-
         for col in metrics:
             row = conn.execute(
                 f"""SELECT
@@ -155,7 +186,6 @@ async def host_summary(window_s: int = Query(default=3600, ge=60, le=86400)):
                     WHERE s.epoch_s >= ?""",
                 (cutoff_epoch,),
             ).fetchone()
-
             if row and row["avg_val"] is not None:
                 result[col] = {
                     "min": row["min_val"],
@@ -163,14 +193,11 @@ async def host_summary(window_s: int = Query(default=3600, ge=60, le=86400)):
                     "avg": row["avg_val"],
                 }
 
-        # Sample count
         count_row = conn.execute(
             "SELECT COUNT(*) as cnt FROM samples WHERE epoch_s >= ?",
             (cutoff_epoch,),
         ).fetchone()
         result["sample_count"] = count_row["cnt"]
-
         return result
-
     finally:
         conn.close()

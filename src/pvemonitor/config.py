@@ -53,6 +53,12 @@ DEFAULTS: dict[str, Any] = {
     "locking": {
         "stale_timeout_multiplier": 5,
     },
+    "retention": {
+        "raw_days": 30,
+        "rollup_1m_days": 90,
+        "rollup_5m_days": 365,
+        "maintenance_interval_samples": 360,
+    },
 }
 
 
@@ -222,6 +228,22 @@ class Config:
         except Exception:
             return "0.1.0"
 
+    @property
+    def raw_retention_days(self) -> int:
+        return self._data["retention"]["raw_days"]
+
+    @property
+    def rollup_1m_retention_days(self) -> int:
+        return self._data["retention"]["rollup_1m_days"]
+
+    @property
+    def rollup_5m_retention_days(self) -> int:
+        return self._data["retention"]["rollup_5m_days"]
+
+    @property
+    def maintenance_interval_samples(self) -> int:
+        return self._data["retention"]["maintenance_interval_samples"]
+
     def as_dict(self) -> dict:
         """Return resolved config for display (paths resolved)."""
         return {
@@ -246,6 +268,10 @@ class Config:
             "api_port": self.api_port,
             "api_auth_enabled": bool(self.api_auth_token),
             "stale_lock_timeout_s": self.stale_lock_timeout_s,
+            "raw_retention_days": self.raw_retention_days,
+            "rollup_1m_retention_days": self.rollup_1m_retention_days,
+            "rollup_5m_retention_days": self.rollup_5m_retention_days,
+            "maintenance_interval_samples": self.maintenance_interval_samples,
             "collector_version": self.collector_version,
         }
 

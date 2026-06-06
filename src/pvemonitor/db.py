@@ -24,8 +24,7 @@ CONNECTION_PRAGMAS: list[str] = [
     "PRAGMA busy_timeout=5000",
 ]
 
-# Count collection runs for periodic WAL checkpoint
-_collection_run_count = 0
+# Sample-driven periodic WAL checkpoint
 
 
 def get_connection(db_path: str | Path) -> sqlite3.Connection:
@@ -282,10 +281,10 @@ def do_wal_checkpoint(conn: sqlite3.Connection, mode: str = "PASSIVE") -> None:
         logger.warning("WAL checkpoint failed: %s", exc)
 
 
-def maybe_checkpoint(conn: sqlite3.Connection) -> None:
-    """Run periodic WAL checkpoint every 60 collection runs."""
-    global _collection_run_count
-    _collection_run_count += 1
-    if _collection_run_count % 60 == 0:
+def maybe_checkpoint(conn: sqlite3.Connection, sample_id: int | None = None) -> None:
+    """Run periodic WAL checkpoint every 60 collected samples."""
+    if sample_id is None:
+        return
+    if sample_id % 60 == 0:
         do_wal_checkpoint(conn, "PASSIVE")
-        logger.debug("WAL checkpoint (passive) after %d runs", _collection_run_count)
+        logger.debug("WAL checkpoint (passive) at sample_id=%d", sample_id)

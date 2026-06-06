@@ -13,10 +13,21 @@ def _parse_time(value: str) -> str:
     """Parse a time parameter into an SQL expression returning epoch seconds."""
     value = value.strip()
     if value == "now":
-        return "CAST(strftime('%s', 'now') AS INTEGER)"
+        return "unixepoch('now')"
     if value.startswith("-"):
-        return f"CAST(strftime('%s', 'now', '{value}') AS INTEGER)"
-    return f"CAST(strftime('%s', '{value}') AS INTEGER)"
+        modifier = _to_sqlite_modifier(value)
+        return f"unixepoch('now', '{modifier}')"
+    return f"unixepoch('{value}')"
+
+
+def _to_sqlite_modifier(value: str) -> str:
+    """Convert compact time format to SQLite modifier: '-15m' → '-15 minutes'."""
+    import re
+    m = re.match(r'^(-?\d+)(m|h|d)$', value)
+    if not m:
+        return value
+    unit_map = {"m": "minutes", "h": "hours", "d": "days"}
+    return f"{m.group(1)} {unit_map[m.group(2)]}"
 
 
 @router.get("")

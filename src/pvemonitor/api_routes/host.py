@@ -34,15 +34,27 @@ def _parse_time(value: str) -> str:
     """Parse a time parameter into an SQL expression returning epoch seconds.
 
     Accepts 'now', relative ('-2h', '-30m'), or ISO 8601.
-    Returns a CAST(strftime(...) AS INTEGER) expression for epoch comparison.
+    Uses SQLite unixepoch() (3.38+) for epoch conversion.
+    Converts compact relative format to SQLite modifier format:
+      -15m → '-15 minutes', -2h → '-2 hours', -7d → '-7 days'
     """
     value = value.strip()
     if value == "now":
-        return "CAST(strftime('%s', 'now') AS INTEGER)"
+        return "unixepoch('now')"
     if value.startswith("-"):
-        return f"CAST(strftime('%s', 'now', '{value}') AS INTEGER)"
-    # Absolute ISO 8601 — convert to epoch
-    return f"CAST(strftime('%s', '{value}') AS INTEGER)"
+        modifier = _to_sqlite_modifier(value)
+        return f"unixepoch('now', '{modifier}')"
+    return f"unixepoch('{value}')"
+
+
+def _to_sqlite_modifier(value: str) -> str:
+    """Convert compact time format to SQLite modifier: '-15m' → '-15 minutes'."""
+    import re
+    m = re.match(r'^(-?\d+)(m|h|d)$', value)
+    if not m:
+        return value
+    unit_map = {"m": "minutes", "h": "hours", "d": "days"}
+    return f"{m.group(1)} {unit_map[m.group(2)]}"
 
 
 def _resolve_fields(fields: str | None) -> list[str] | None:

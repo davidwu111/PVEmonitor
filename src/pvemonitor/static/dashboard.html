@@ -106,6 +106,8 @@
   </div>
 </div>
 
+<div id="status-banner" style="display:none; padding:8px 16px; margin-bottom:12px; border-radius:6px; font-size:13px; background:#f8514922; border:1px solid #f85149; color:#f85149;"></div>
+
 <div class="time-controls">
   <button data-range="15m" class="active">15m</button>
   <button data-range="1h">1h</button>
@@ -367,14 +369,20 @@ async function loadHealth() {
 
 // ─── Host charts ───────────────────────────────────────────────────────
 async function loadHostCharts(range) {
+  // Clear any "No data" placeholders from previous runs
+  document.querySelectorAll('.no-data').forEach(el => el.remove());
+  document.querySelectorAll('.chart-box canvas').forEach(c => c.style.display = '');
+
   const { from, to } = buildTimeParams(range);
   const url = `/api/host/range?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
   const rows = await fetchJSON(apiUrl(url));
 
   if (!rows || !rows.length) {
+    showBanner('No data in this time range — run "pvemonitor collect" to populate the database first.', 'warn');
     showEmptyCharts();
     return;
   }
+  hideBanner();
 
   // CPU breakdown
   destroyChart('cpuChart');
@@ -458,7 +466,35 @@ async function loadHostCharts(range) {
 function showEmptyCharts() {
   const ids = ['cpuChart','gpuChart','loadChart','memChart','cputempChart','swapChart',
                'psiCpuChart','psiIoChart','psiMemChart'];
-  ids.forEach(id => destroyChart(id));
+  ids.forEach(id => {
+    destroyChart(id);
+    const canvas = document.getElementById(id);
+    if (!canvas) return;
+    const box = canvas.closest('.chart-box');
+    // Remove any existing placeholder
+    const old = box?.querySelector('.no-data');
+    if (old) old.remove();
+    // Add placeholder if box exists
+    if (box && !box.querySelector('.no-data')) {
+      const div = document.createElement('div');
+      div.className = 'no-data';
+      div.style.cssText = 'text-align:center;padding:40px 0;color:var(--text-muted);font-size:13px;';
+      div.textContent = 'No data for this time range';
+      canvas.style.display = 'none';
+      box.appendChild(div);
+      // Store reference to restore
+      canvas._placeholder = div;
+    }
+  });
+}
+
+function restoreChartCanvas(canvasId) {
+  const canvas = document.getElementById(canvasId);
+  if (canvas && canvas._placeholder) {
+    canvas._placeholder.remove();
+    canvas._placeholder = null;
+    canvas.style.display = '';
+  }
 }
 
 function loadPsiCharts(rows, range) {
@@ -691,8 +727,33 @@ if (urlParams.get('interval')) {
   refreshIndicator.textContent = `⟳ ${REFRESH_S}s`;
 }
 
+// ─── Status banner ──────────────────────────────────────────────────────
+function showBanner(msg, kind) {
+  const el = document.getElementById('status-banner');
+  el.textContent = msg;
+  el.style.display = 'block';
+  const colors = {
+    error: ['#f8514922','#f85149','#f85149'],
+    warn:  ['#d2991d22','#d2991d','#d2991d'],
+    info:  ['#58a6ff22','#58a6ff','#58a6ff'],
+  };
+  const [bg,border,text] = colors[kind] || colors.error;
+  el.style.background = bg;
+  el.style.borderColor = border;
+  el.style.color = text;
+}
+function hideBanner() { document.getElementById('status-banner').style.display = 'none'; }
+
 // ─── Init ───────────────────────────────────────────────────────────────
-loadAll().then(() => startRefresh());
+if (typeof Chart === 'undefined') {
+  showBanner('Chart.js failed to load from CDN — no internet access from this browser? Charts cannot render.', 'error');
+} else {
+  hideBanner();
+  loadAll().then(() => startRefresh()).catch(e => {
+    showBanner('Failed to load dashboard data: ' + e.message, 'error');
+    console.error(e);
+  });
+}
 </script>
 </body>
 </html>

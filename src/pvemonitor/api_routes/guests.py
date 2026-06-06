@@ -10,8 +10,10 @@ router = APIRouter(prefix="/api/guests", tags=["guests"])
 
 
 def _parse_time(value: str) -> str:
-    """Parse a time parameter: ISO 8601 or relative like '-2h'."""
+    """Parse a time parameter into an SQL expression."""
     value = value.strip()
+    if value == "now":
+        return "datetime('now')"
     if value.startswith("-"):
         return f"datetime('now', '{value}')"
     return f"'{value}'"

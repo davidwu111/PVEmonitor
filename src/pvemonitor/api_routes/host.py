@@ -31,15 +31,15 @@ VALID_HOST_FIELDS: set[str] = {
 
 
 def _parse_time(value: str) -> str:
-    """Parse a time parameter: ISO 8601 or relative like '-2h', '-30m'.
+    """Parse a time parameter into an SQL expression.
 
-    Returns an ISO 8601 string for SQLite datetime comparison.
+    Accepts 'now', relative ('-2h', '-30m'), or ISO 8601.
     """
     value = value.strip()
+    if value == "now":
+        return "datetime('now')"
     if value.startswith("-"):
-        # Relative time
         return f"datetime('now', '{value}')"
-    # Absolute ISO 8601
     return f"'{value}'"
 
 

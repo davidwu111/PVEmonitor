@@ -1,7 +1,9 @@
 """GPU metrics collection for PVEmonitor.
 
-Primary source: rocm-smi for AMD GPUs.
-Fallback: sysfs for basic busy% and temperature.
+Multi-vendor support:
+    AMD    — rocm-smi (primary: JSON, fallback: text parsing)
+    NVIDIA — nvidia-smi (CSV query)
+    Other  — sysfs (/sys/class/drm/card*/) for basic busy% + temperature
 
 v1 limitation: Only the first GPU's metrics are stored in host_metrics.
 Multi-GPU support is planned for Phase 2.
@@ -24,16 +26,24 @@ from .util import (
 
 logger = logging.getLogger(__name__)
 
-# Fields reported by rocm-smi that may be unsupported (store NULL)
-ROCM_UNSUPPORTED_MARKERS = [
-    "N/A",
-    "unsupported",
-    "Unknown error",
+# Fields reported by vendor tools that may be unsupported (store NULL)
+UNSUPPORTED_MARKERS = ["N/A", "unsupported", "Unknown error", "[Not Supported]"]
+
+# Known nvidia-smi binary locations
+_NVIDIA_SMI_CANDIDATES = [
+    "/usr/bin/nvidia-smi",
+    "/usr/local/bin/nvidia-smi",
+    "nvidia-smi",  # PATH lookup
 ]
 
 
 def collect_gpu_metrics(config: Config) -> dict[str, Any]:
-    """Collect GPU metrics. Tries rocm-smi first, falls back to sysfs.
+    """Collect GPU metrics. Tries vendor tools in order, falls back to sysfs.
+
+    Detection order:
+        1. rocm-smi       (AMD GPUs)
+        2. nvidia-smi     (NVIDIA GPUs)
+        3. sysfs          (any GPU with standard DRM interfaces)
 
     Returns a dict of host_metrics GPU columns (gpu_name, gpu_busy_pct,
     gpu_temp_c, gpu_power_w, gpu_vram_used_pct), with NULL defaults.
@@ -46,54 +56,55 @@ def collect_gpu_metrics(config: Config) -> dict[str, Any]:
         "gpu_vram_used_pct": None,
     }
 
-    # Try rocm-smi
+    # 1. Try AMD rocm-smi
     try:
         metrics = _collect_rocm_smi(config.rocm_smi_bin)
-        if metrics:
+        if metrics and any(v is not None for v in metrics.values()):
             result.update(metrics)
+            logger.debug("GPU metrics collected via rocm-smi (AMD)")
             return result
     except SubprocessError:
-        logger.debug("rocm-smi failed, trying sysfs fallback")
+        logger.debug("rocm-smi not available")
 
-    # Sysfs fallback
+    # 2. Try NVIDIA nvidia-smi
+    try:
+        metrics = _collect_nvidia_smi(config.nvidia_smi_bin)
+        if metrics and any(v is not None for v in metrics.values()):
+            result.update(metrics)
+            logger.debug("GPU metrics collected via nvidia-smi (NVIDIA)")
+            return result
+    except SubprocessError:
+        logger.debug("nvidia-smi not available")
+
+    # 3. Sysfs fallback (AMD iGPU, Intel Arc, or any DRM device)
     if config.gpu_sysfs_fallback:
         try:
             metrics = _collect_gpu_sysfs()
             if metrics and any(v is not None for v in metrics.values()):
                 result.update(metrics)
+                logger.debug("GPU metrics collected via sysfs fallback")
         except Exception as exc:
             logger.warning("GPU sysfs collection failed: %s", exc)
 
     return result
 
 
-def _collect_rocm_smi(bin_path: str) -> dict[str, Any]:
-    """Collect GPU metrics from rocm-smi.
+# ─── AMD: rocm-smi ──────────────────────────────────────────────────────
 
-    Uses `rocm-smi --showuse --showtemp --showpower --showmeminfo vram --json`.
-    Falls back to individual show commands if --json is not available.
-    """
+def _collect_rocm_smi(bin_path: str) -> dict[str, Any]:
+    """Collect GPU metrics from rocm-smi (AMD)."""
     result: dict[str, Any] = {
-        "gpu_name": None,
-        "gpu_busy_pct": None,
-        "gpu_temp_c": None,
-        "gpu_power_w": None,
-        "gpu_vram_used_pct": None,
+        "gpu_name": None, "gpu_busy_pct": None,
+        "gpu_temp_c": None, "gpu_power_w": None, "gpu_vram_used_pct": None,
     }
 
-    # Attempt JSON output (preferred: single call, structured)
     import json
 
+    # Attempt JSON output
     try:
         stdout = run_cmd(
-            [
-                bin_path,
-                "--showuse",
-                "--showtemp",
-                "--showpower",
-                "--showmeminfo", "vram",
-                "--json",
-            ],
+            [bin_path, "--showuse", "--showtemp", "--showpower",
+             "--showmeminfo", "vram", "--json"],
             timeout=5.0,
         )
         if stdout:
@@ -102,7 +113,7 @@ def _collect_rocm_smi(bin_path: str) -> dict[str, Any]:
     except (SubprocessError, json.JSONDecodeError):
         pass
 
-    # Fallback: text-mode rocm-smi (parsed output)
+    # Fallback: text-mode parsing
     try:
         stdout = run_cmd(
             [bin_path, "--showuse", "--showtemp", "--showpower"],
@@ -120,23 +131,14 @@ def _collect_rocm_smi(bin_path: str) -> dict[str, Any]:
 
 
 def _parse_rocm_json(data: dict | list) -> dict[str, Any]:
-    """Parse rocm-smi JSON output into host_metrics GPU fields.
-
-    Handles both dict (single GPU) and list (multi-GPU) top-level shapes.
-    v1: stores only the first GPU; logs a warning if multiple GPUs are found.
-    """
+    """Parse rocm-smi JSON output."""
     result: dict[str, Any] = {
-        "gpu_name": None,
-        "gpu_busy_pct": None,
-        "gpu_temp_c": None,
-        "gpu_power_w": None,
-        "gpu_vram_used_pct": None,
+        "gpu_name": None, "gpu_busy_pct": None,
+        "gpu_temp_c": None, "gpu_power_w": None, "gpu_vram_used_pct": None,
     }
 
-    # Normalize to list of cards
     cards: list[dict] = []
     if isinstance(data, dict):
-        # Try common rocm-smi JSON shapes
         for key in ("cards", "gpus", "GPU"):
             if key in data:
                 val = data[key]
@@ -148,12 +150,10 @@ def _parse_rocm_json(data: dict | list) -> dict[str, Any]:
         if not cards and "card" in data:
             cards = [data["card"]]
         if not cards:
-            # Maybe the top-level dict IS a single card keyed by index
             for k, v in data.items():
                 if isinstance(v, dict) and "GPU" in k:
                     cards.append(v)
             if not cards and data:
-                # Only treat the dict as a card if it's non-empty
                 cards = [data]
     elif isinstance(data, list):
         cards = data
@@ -170,16 +170,12 @@ def _parse_rocm_json(data: dict | list) -> dict[str, Any]:
     card = cards[0]
     if isinstance(card, dict):
         result["gpu_name"] = str(card.get("GPU", card.get("Card name", card.get("card", "GPU 0"))))
-        # Busy %
         use = card.get("GPU use (%)", card.get("GPU utilization (%)", card.get("busy_percent")))
         result["gpu_busy_pct"] = _safe_float(use)
-        # Temperature
         temp = card.get("Temperature (Sensor edge) (C)", card.get("Temperature (C)", card.get("temp")))
         result["gpu_temp_c"] = _safe_float(temp)
-        # Power
         power = card.get("Average Graphics Package Power (W)", card.get("Power (W)", card.get("power")))
         result["gpu_power_w"] = _safe_float(power)
-        # VRAM (try various keys)
         vram_pct = card.get("VRAM (%)", card.get("vram_percent", card.get("vram_used_pct")))
         if vram_pct is None:
             used = card.get("VRAM Total Used Memory (B)", card.get("vram_used_bytes"))
@@ -191,39 +187,24 @@ def _parse_rocm_json(data: dict | list) -> dict[str, Any]:
 
 
 def _parse_rocm_text(stdout: str) -> dict[str, Any]:
-    """Parse text-mode rocm-smi output (non-JSON fallback).
-
-    Example lines:
-        GPU[0]  : 45.0 C
-        GPU[0]  : 12.0 %
-    """
+    """Parse text-mode rocm-smi output (non-JSON fallback)."""
     result: dict[str, Any] = {
-        "gpu_name": None,
-        "gpu_busy_pct": None,
-        "gpu_temp_c": None,
-        "gpu_power_w": None,
-        "gpu_vram_used_pct": None,
+        "gpu_name": None, "gpu_busy_pct": None,
+        "gpu_temp_c": None, "gpu_power_w": None, "gpu_vram_used_pct": None,
     }
 
-    lines = stdout.splitlines()
-    for line in lines:
+    for line in stdout.splitlines():
         line = line.strip()
         if not line:
             continue
-
-        # temperature
         match = re.search(r"temperature.*?([\d.]+)\s*C", line, re.IGNORECASE)
         if match:
             result["gpu_temp_c"] = parse_float(match.group(1))
             continue
-
-        # GPU use / busy
         match = re.search(r"(?:GPU\s*use|busy|utilization).*?([\d.]+)\s*%", line, re.IGNORECASE)
         if match:
             result["gpu_busy_pct"] = parse_float(match.group(1))
             continue
-
-        # Power
         match = re.search(r"(?:power|Average Graphics).*?([\d.]+)\s*W", line, re.IGNORECASE)
         if match:
             result["gpu_power_w"] = parse_float(match.group(1))
@@ -233,20 +214,120 @@ def _parse_rocm_text(stdout: str) -> dict[str, Any]:
     return result
 
 
+# ─── NVIDIA: nvidia-smi ─────────────────────────────────────────────────
+
+def _find_nvidia_smi(preferred: str | None = None) -> str | None:
+    """Locate the nvidia-smi binary.
+
+    Checks the configured path first, then common install locations.
+    Returns the path if found, or None.
+    """
+    import os
+
+    candidates = []
+    if preferred:
+        candidates.append(preferred)
+    candidates.extend(_NVIDIA_SMI_CANDIDATES)
+
+    for candidate in candidates:
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+        # PATH lookup for bare command names
+        if "/" not in candidate:
+            import shutil
+            found = shutil.which(candidate)
+            if found:
+                return found
+    return None
+
+
+def _collect_nvidia_smi(preferred_bin: str | None = None) -> dict[str, Any]:
+    """Collect GPU metrics from nvidia-smi (NVIDIA).
+
+    Uses the query API for structured CSV output:
+        nvidia-smi --query-gpu=name,temperature.gpu,utilization.gpu,
+                     power.draw,memory.used,memory.total
+                   --format=csv,noheader,nounits
+
+    Returns a dict with all five GPU host_metrics columns.
+    """
+    bin_path = _find_nvidia_smi(preferred_bin)
+    if bin_path is None:
+        raise SubprocessError("nvidia-smi not found")
+
+    stdout = run_cmd(
+        [
+            bin_path,
+            "--query-gpu=name,temperature.gpu,utilization.gpu,power.draw,memory.used,memory.total",
+            "--format=csv,noheader,nounits",
+        ],
+        timeout=5.0,
+    )
+
+    if not stdout:
+        raise SubprocessError("nvidia-smi returned empty output")
+
+    return _parse_nvidia_csv(stdout)
+
+
+def _parse_nvidia_csv(stdout: str) -> dict[str, Any]:
+    """Parse nvidia-smi CSV output into host_metrics GPU fields.
+
+    Expected format (one line per GPU):
+        GPU Name, 65, 87, 320.50, 16384, 24576
+
+    v1: stores only the first GPU; logs a warning if multiple GPUs are found.
+    """
+    result: dict[str, Any] = {
+        "gpu_name": None, "gpu_busy_pct": None,
+        "gpu_temp_c": None, "gpu_power_w": None, "gpu_vram_used_pct": None,
+    }
+
+    lines = [l.strip() for l in stdout.splitlines() if l.strip()]
+    if not lines:
+        return result
+
+    if len(lines) > 1:
+        logger.warning(
+            "Multiple GPUs detected via nvidia-smi (%d). v1 stores only the first GPU's metrics.",
+            len(lines),
+        )
+
+    # Parse first GPU
+    parts = [p.strip() for p in lines[0].split(",")]
+    if len(parts) < 6:
+        logger.warning("Unexpected nvidia-smi CSV format: %s", lines[0])
+        return result
+
+    result["gpu_name"] = parts[0] if parts[0] else None
+    result["gpu_temp_c"] = _safe_float(parts[1])
+    result["gpu_busy_pct"] = _safe_float(parts[2])
+    result["gpu_power_w"] = _safe_float(parts[3])
+
+    # VRAM: compute used percentage from used/total
+    vram_used = _safe_float(parts[4])
+    vram_total = _safe_float(parts[5])
+    result["gpu_vram_used_pct"] = _compute_vram_pct(vram_used, vram_total)
+
+    return result
+
+
+# ─── Sysfs fallback (any GPU with standard DRM interfaces) ─────────────
+
 def _collect_gpu_sysfs() -> dict[str, Any]:
     """Collect GPU metrics from sysfs (/sys/class/drm/card*).
 
-    Returns a dict with gpu_name, gpu_busy_pct, gpu_temp_c.
-    Power and VRAM are not available via sysfs on most AMD GPUs.
+    Works with AMD iGPUs, Intel Arc, and any GPU that exposes
+    gpu_busy_percent and hwmon temperature via the DRM subsystem.
+
+    Returns busy%, temperature, and name. Power and VRAM are not
+    available via this path.
     """
     import glob
 
     result: dict[str, Any] = {
-        "gpu_name": None,
-        "gpu_busy_pct": None,
-        "gpu_temp_c": None,
-        "gpu_power_w": None,
-        "gpu_vram_used_pct": None,
+        "gpu_name": None, "gpu_busy_pct": None,
+        "gpu_temp_c": None, "gpu_power_w": None, "gpu_vram_used_pct": None,
     }
 
     cards = sorted(glob.glob("/sys/class/drm/card*"))
@@ -262,7 +343,6 @@ def _collect_gpu_sysfs() -> dict[str, Any]:
     card = cards[0]
     card_num = card.rstrip("/").rsplit("card", 1)[-1]
 
-    # GPU name (from lspci of the render device, or just the card name)
     result["gpu_name"] = f"GPU {card_num}"
 
     # Busy percent
@@ -271,7 +351,7 @@ def _collect_gpu_sysfs() -> dict[str, Any]:
     if busy_str is not None:
         result["gpu_busy_pct"] = parse_float(busy_str)
 
-    # Temperature: look for hwmon under the card's device
+    # Temperature
     hwmon_dirs = sorted(glob.glob(f"{card}/device/hwmon/hwmon*"))
     for hwmon in hwmon_dirs:
         temp_path = f"{hwmon}/temp1_input"
@@ -282,7 +362,7 @@ def _collect_gpu_sysfs() -> dict[str, Any]:
                 result["gpu_temp_c"] = temp_millic / 1000.0
                 break
 
-    # Try renderD* device as fallback for name/temp
+    # Try to read a human-readable device name
     render_cards = sorted(glob.glob(f"/sys/class/drm/renderD*"))
     for render in render_cards:
         try:
@@ -297,6 +377,8 @@ def _collect_gpu_sysfs() -> dict[str, Any]:
     return result
 
 
+# ─── Shared helpers ─────────────────────────────────────────────────────
+
 def _safe_float(value: Any) -> float | None:
     """Convert a value to float, returning None for unsupported markers."""
     if value is None:
@@ -304,7 +386,7 @@ def _safe_float(value: Any) -> float | None:
     s = str(value).strip()
     if not s:
         return None
-    for marker in ROCM_UNSUPPORTED_MARKERS:
+    for marker in UNSUPPORTED_MARKERS:
         if marker.lower() in s.lower():
             return None
     return parse_float(s)

@@ -20,6 +20,7 @@ collection:
 
 gpu:
   rocm_smi_bin: /usr/bin/rocm-smi
+  nvidia_smi_bin: null           # null = auto-detect from PATH; set to override
   sysfs_fallback: true
 
 rate_calculation:

@@ -34,6 +34,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "gpu": {
         "rocm_smi_bin": "/usr/bin/rocm-smi",
+        "nvidia_smi_bin": None,  # auto-detect from PATH if None
         "sysfs_fallback": True,
     },
     "rate_calculation": {
@@ -171,6 +172,10 @@ class Config:
         return self._data["gpu"]["rocm_smi_bin"]
 
     @property
+    def nvidia_smi_bin(self) -> str | None:
+        return self._data["gpu"]["nvidia_smi_bin"]
+
+    @property
     def gpu_sysfs_fallback(self) -> bool:
         return self._data["gpu"]["sysfs_fallback"]
 
@@ -233,6 +238,7 @@ class Config:
             "psi_enabled": self.psi_enabled,
             "top_process_enabled": self.top_process_enabled,
             "rocm_smi_bin": self.rocm_smi_bin,
+            "nvidia_smi_bin": self.nvidia_smi_bin or "(auto-detect)",
             "gpu_sysfs_fallback": self.gpu_sysfs_fallback,
             "max_rate_interval_s": self.max_rate_interval_s,
             "log_level": self.log_level,

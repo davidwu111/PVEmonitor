@@ -9,27 +9,31 @@ monitoring and easy analysis.
 ## Quick start
 
 ```sh
-# Bootstrap Python environment
+# 1. Bootstrap Python virtual environment
 ./scripts/bootstrap-venv.sh
 
-# Initialize the database
+# 2. Initialize the database
 .venv/bin/python -m pvemonitor init-db
 
-# Run one collection
+# 3. Verify a single collection works
 .venv/bin/python -m pvemonitor collect
 
-# Start the API server (dashboard at http://<host>:8806)
+# 4. Install systemd units (starts collector timer + API server)
+sudo ./scripts/install-systemd.sh
+
+# 5. Open dashboard at http://<host>:8806
+```
+
+To try the API without installing systemd:
+
+```sh
 .venv/bin/python -m pvemonitor serve
 ```
 
-## Install systemd units
+To install systemd units without auto-starting:
 
 ```sh
-sudo cp systemd/pvemonitor-*.service /etc/systemd/system/
-sudo cp systemd/pvemonitor-*.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now pvemonitor-collector.timer
-sudo systemctl enable --now pvemonitor-api.service
+sudo ./scripts/install-systemd.sh --no-enable
 ```
 
 ## CLI reference

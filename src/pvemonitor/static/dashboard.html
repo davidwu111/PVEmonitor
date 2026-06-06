@@ -87,7 +87,12 @@
   .token-bar input { padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px;
     background: var(--bg); color: var(--text); width: 160px; }
   .no-data-msg { text-align:center; padding:20px 0; color:var(--text-muted); font-size:13px; }
-  #diag { font-size:11px; color:var(--text-muted); margin-bottom:8px; display:none; }
+  #diag {
+    font-size: 11px; color: var(--text-muted); margin-bottom: 10px; display: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: rgba(110, 118, 129, 0.08); line-height: 1.45;
+  }
   @media (max-width: 700px) {
     .charts-grid { grid-template-columns: 1fr; }
     .header { flex-direction: column; align-items: flex-start; gap: 8px; }
@@ -222,9 +227,141 @@ async function fetchJSON(url) {
 }
 
 const diagEl = document.getElementById('diag');
-function diag(msg) {
+let refreshTimer = null;
+let refreshTicker = null;
+let refreshInFlight = false;
+let refreshCycle = 0;
+let nextRefreshAt = null;
+const diagState = {
+  message: 'startup',
+  lastEventAt: null,
+  lastSuccessAt: null,
+  lastDurationMs: null,
+  rows: null,
+  charts: null,
+  totalSamples: null,
+  latestSampleTs: null,
+  guestsTotal: null,
+  guestsRunning: null,
+  lastError: null,
+};
+
+function fmtClock(ts) {
+  if (!ts) return '-';
+  const d = ts instanceof Date ? ts : new Date(ts);
+  return Number.isNaN(d.getTime()) ? String(ts) : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function secondsUntilNextRefresh() {
+  if (!refreshAllowedForRange() || nextRefreshAt == null) return null;
+  return Math.max(0, Math.ceil((nextRefreshAt - Date.now()) / 1000));
+}
+
+function renderRefreshIndicator() {
+  const el = document.getElementById('refresh-indicator');
+  if (!el) return;
+  if (!isLiveRange(currentRange)) {
+    el.textContent = '⟳ paused (historical)';
+    el.classList.add('paused');
+    return;
+  }
+  if (!autoRefreshEnabled) {
+    el.textContent = '⟳ off';
+    el.classList.add('paused');
+    return;
+  }
+  el.classList.remove('paused');
+  if (refreshInFlight) {
+    el.textContent = '⟳ refreshing…';
+    return;
+  }
+  const remaining = secondsUntilNextRefresh();
+  el.textContent = remaining != null ? `⟳ ${remaining}s` : `⟳ ${REFRESH_S}s`;
+}
+
+function renderDiag() {
   diagEl.style.display = 'block';
-  diagEl.textContent = ['DEBUG', new Date().toLocaleTimeString(), msg].join(' | ');
+  const parts = ['DEBUG'];
+  parts.push(fmtClock(diagState.lastEventAt || new Date()));
+  parts.push(diagState.message || 'idle');
+  if (diagState.rows != null) parts.push(`rows ${diagState.rows}`);
+  if (diagState.charts != null) parts.push(`charts ${diagState.charts}`);
+  if (diagState.totalSamples != null) parts.push(`samples ${diagState.totalSamples}`);
+  if (diagState.guestsTotal != null) {
+    const running = diagState.guestsRunning != null ? diagState.guestsRunning : 0;
+    parts.push(`guests ${running}/${diagState.guestsTotal} running`);
+  }
+  if (diagState.latestSampleTs) parts.push(`latest ${fmtClock(diagState.latestSampleTs)}`);
+  if (diagState.lastSuccessAt) parts.push(`last ok ${fmtClock(diagState.lastSuccessAt)}`);
+  if (diagState.lastDurationMs != null) parts.push(`${diagState.lastDurationMs} ms`);
+  if (refreshAllowedForRange()) {
+    parts.push(refreshInFlight ? 'next refreshing now' : `next ${secondsUntilNextRefresh() ?? REFRESH_S}s`);
+  }
+  if (diagState.lastError) parts.push(`error ${diagState.lastError}`);
+  diagEl.textContent = parts.join(' | ');
+}
+
+function setDiagState(patch = {}) {
+  Object.assign(diagState, patch);
+  renderDiag();
+}
+
+function diag(msg, patch = {}) {
+  setDiagState({ message: msg, lastEventAt: new Date().toISOString(), ...patch });
+}
+
+function stopRefreshTimers() {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  if (refreshTicker) clearInterval(refreshTicker);
+  refreshTimer = null;
+  refreshTicker = null;
+  nextRefreshAt = null;
+}
+
+function startRefreshTicker() {
+  if (refreshTicker) clearInterval(refreshTicker);
+  if (!refreshAllowedForRange()) return;
+  refreshTicker = setInterval(() => {
+    renderRefreshIndicator();
+    renderDiag();
+  }, 1000);
+}
+
+function scheduleNextRefresh(delayMs) {
+  if (!refreshAllowedForRange()) {
+    stopRefreshTimers();
+    renderRefreshIndicator();
+    renderDiag();
+    return;
+  }
+  if (refreshTimer) clearTimeout(refreshTimer);
+  nextRefreshAt = Date.now() + delayMs;
+  renderRefreshIndicator();
+  renderDiag();
+  startRefreshTicker();
+  refreshTimer = setTimeout(async () => {
+    refreshTimer = null;
+    nextRefreshAt = null;
+    refreshInFlight = true;
+    refreshCycle += 1;
+    renderRefreshIndicator();
+    diag(`auto-refresh #${refreshCycle} started`);
+    try {
+      await loadAll({ source: 'auto', cycle: refreshCycle });
+    } catch (e) {
+      showBanner('Auto-refresh error: ' + e.message, 'error');
+      setDiagState({ lastError: e.message, message: `auto-refresh #${refreshCycle} failed`, lastEventAt: new Date().toISOString() });
+      console.error(e);
+    } finally {
+      refreshInFlight = false;
+      if (refreshAllowedForRange()) {
+        scheduleNextRefresh(REFRESH_S * 1000);
+      } else {
+        renderRefreshIndicator();
+        renderDiag();
+      }
+    }
+  }, delayMs);
 }
 
 function showBanner(msg, kind) {
@@ -379,12 +516,18 @@ function makeChart(canvasId, chartData, scaleOverrides) {
 async function loadHealth() {
   try {
     const h = await fetchJSON(apiUrl('/api/health'));
-    if (!h) return;
+    if (!h) return null;
     document.getElementById('hostname').textContent = h.hostname ? 'host: ' + h.hostname : (h.latest_sample_ts ? 'host: pve' : 'host: —');
     document.getElementById('sample-count').textContent = 'samples: ' + (h.total_samples?.toLocaleString()||0);
     document.getElementById('db-size').textContent = 'db: ' + (h.db_size_bytes?(h.db_size_bytes/1048576).toFixed(1):'0') + ' MB';
-    diag('health OK, ' + (h.total_samples||0) + ' samples');
-  } catch(e) { diag('health FAIL: '+e.message); }
+    setDiagState({ totalSamples: h.total_samples || 0, latestSampleTs: h.latest_sample_ts || diagState.latestSampleTs });
+    diag('health OK');
+    return h;
+  } catch(e) {
+    setDiagState({ lastError: e.message });
+    diag('health FAIL: '+e.message);
+    return null;
+  }
 }
 
 async function loadHostCharts(range) {
@@ -395,21 +538,23 @@ async function loadHostCharts(range) {
 
   const { from, to } = buildTimeParams(range);
   const url = apiUrl('/api/host/range?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to));
-  diag('fetching ' + url);
+  diag('fetching host range ' + range, { rows: null, charts: 0, lastError: null });
 
   let rows;
   try { rows = await fetchJSON(url); } catch(e) {
     showBanner('API error: ' + e.message + ' — is the server running?', 'error');
+    setDiagState({ lastError: e.message });
     diag('API FAIL: '+e.message);
-    return;
+    return null;
   }
 
   if (!rows || !rows.length) {
     showBanner('No data in this time range. Run "pvemonitor collect" to populate.', 'warn');
-    return;
+    setDiagState({ rows: 0, charts: 0 });
+    return [];
   }
 
-  diag('got ' + rows.length + ' data points, rendering charts...');
+  diag('rendering host charts', { rows: rows.length });
   hideBanner();
 
   // CPU breakdown (stacked area)
@@ -468,12 +613,17 @@ async function loadHostCharts(range) {
       'some_avg10': r=>r.psi_mem_some_avg10, 'some_avg60': r=>r.psi_mem_some_avg60, 'some_avg300': r=>r.psi_mem_some_avg300,
     }, range));
   }
+  const chartCount = Object.keys(_charts).length;
+  setDiagState({ rows: rows.length, charts: chartCount, latestSampleTs: rows[rows.length - 1]?.ts || diagState.latestSampleTs });
+  return rows;
 }
 
 async function loadGuestTable() {
   let guests;
-  try { guests = await fetchJSON(apiUrl('/api/guests')); } catch(e) { return; }
-  if (!guests) return;
+  try { guests = await fetchJSON(apiUrl('/api/guests')); } catch(e) { return []; }
+  if (!guests) return [];
+  const runningGuests = guests.filter(g => g.status === 'running').length;
+  setDiagState({ guestsTotal: guests.length, guestsRunning: runningGuests });
 
   const tbody = document.getElementById('guest-tbody');
   tbody.innerHTML = guests.map(g => {
@@ -503,6 +653,7 @@ async function loadGuestTable() {
       loadGuestTable();
     });
   });
+  return guests;
 }
 
 async function loadGuestCharts(vmid) {
@@ -528,15 +679,31 @@ async function loadGuestCharts(vmid) {
   }, r));
 }
 
-async function loadAll() {
-  await loadHealth();
-  await loadHostCharts(currentRange);
-  await loadGuestTable();
+async function loadAll(context = {}) {
+  const startedAt = performance.now();
+  const source = context.source || 'manual';
+  diag(`${source === 'auto' ? 'auto-refresh' : 'refresh'} started`, { lastError: null });
+  const health = await loadHealth();
+  const rows = await loadHostCharts(currentRange);
+  const guests = await loadGuestTable();
   if (selectedGuest) {
     document.getElementById('drilldown-title').textContent = 'Guest Detail: '+selectedGuest.type+' '+selectedGuest.vmid;
     document.getElementById('drilldown-section').classList.add('visible');
     await loadGuestCharts(selectedGuest.vmid);
   }
+  const durationMs = Math.round(performance.now() - startedAt);
+  setDiagState({
+    message: `${source === 'auto' ? 'auto-refresh' : 'refresh'} OK`,
+    lastEventAt: new Date().toISOString(),
+    lastSuccessAt: new Date().toISOString(),
+    lastDurationMs: durationMs,
+    rows: rows?.length ?? diagState.rows,
+    charts: Object.keys(_charts).length,
+    totalSamples: health?.total_samples ?? diagState.totalSamples,
+    latestSampleTs: rows?.[rows.length - 1]?.ts || health?.latest_sample_ts || diagState.latestSampleTs,
+    guestsTotal: guests?.length ?? diagState.guestsTotal,
+    guestsRunning: guests?.filter(g => g.status === 'running').length ?? diagState.guestsRunning,
+  });
 }
 
 // ─── Time range buttons ────────────────────────────────────────────────
@@ -547,22 +714,14 @@ function setActiveButton(range) {
 }
 function isLiveRange(range) { return range==='15m'||range==='1h'||range==='6h'||range==='24h'; }
 function updateRefresh(range) {
-  const el = document.getElementById('refresh-indicator');
   if (isLiveRange(range)) {
     REFRESH_S = REFRESH_OVERRIDE_S || (range==='15m'?10:(range==='1h'?15:30));
-    if (autoRefreshEnabled) {
-      el.textContent = '⟳ '+REFRESH_S+'s';
-      el.classList.remove('paused');
-    } else {
-      el.textContent = '⟳ off';
-      el.classList.add('paused');
-    }
   } else {
     REFRESH_S = 300;
-    el.textContent = '⟳ paused (historical)';
-    el.classList.add('paused');
   }
   syncAutoRefreshUI();
+  renderRefreshIndicator();
+  renderDiag();
   startRefresh();
 }
 
@@ -597,17 +756,12 @@ document.getElementById('btn-apply-custom').addEventListener('click', async () =
 });
 
 // ─── Refresh timer ─────────────────────────────────────────────────────
-let refreshTimer = null;
 function startRefresh() {
-  if (refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = null;
+  stopRefreshTimers();
+  renderRefreshIndicator();
+  renderDiag();
   if (!refreshAllowedForRange()) return;
-  refreshTimer = setInterval(() => {
-    loadAll().catch(e => {
-      showBanner('Auto-refresh error: ' + e.message, 'error');
-      console.error(e);
-    });
-  }, REFRESH_S*1000);
+  scheduleNextRefresh(REFRESH_S*1000);
 }
 const urlParams = new URLSearchParams(window.location.search);
 const REFRESH_OVERRIDE_S = urlParams.get('interval') ? (parseInt(urlParams.get('interval'))||null) : null;

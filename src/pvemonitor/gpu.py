@@ -59,7 +59,7 @@ def collect_gpu_metrics(config: Config) -> dict[str, Any]:
     # 1. Try AMD rocm-smi
     try:
         metrics = _collect_rocm_smi(config.rocm_smi_bin)
-        if metrics and any(v is not None for v in metrics.values()):
+        if _has_gpu_measurements(metrics):
             result.update(metrics)
             logger.debug("GPU metrics collected via rocm-smi (AMD)")
             return result
@@ -69,7 +69,7 @@ def collect_gpu_metrics(config: Config) -> dict[str, Any]:
     # 2. Try NVIDIA nvidia-smi
     try:
         metrics = _collect_nvidia_smi(config.nvidia_smi_bin)
-        if metrics and any(v is not None for v in metrics.values()):
+        if _has_gpu_measurements(metrics):
             result.update(metrics)
             logger.debug("GPU metrics collected via nvidia-smi (NVIDIA)")
             return result
@@ -80,7 +80,7 @@ def collect_gpu_metrics(config: Config) -> dict[str, Any]:
     if config.gpu_sysfs_fallback:
         try:
             metrics = _collect_gpu_sysfs()
-            if metrics and any(v is not None for v in metrics.values()):
+            if _has_gpu_measurements(metrics):
                 result.update(metrics)
                 logger.debug("GPU metrics collected via sysfs fallback")
         except Exception as exc:
@@ -147,13 +147,20 @@ def _parse_rocm_json(data: dict | list) -> dict[str, Any]:
                 elif isinstance(val, dict):
                     cards = list(val.values())
                 break
-        if not cards and "card" in data:
+        if not cards and isinstance(data.get("card"), dict):
             cards = [data["card"]]
+        if not cards:
+            nested_cards = [
+                v for k, v in sorted(data.items())
+                if isinstance(v, dict) and re.fullmatch(r"(?:card|gpu)\d+", str(k), re.IGNORECASE)
+            ]
+            if nested_cards:
+                cards = nested_cards
         if not cards:
             for k, v in data.items():
                 if isinstance(v, dict) and "GPU" in k:
                     cards.append(v)
-            if not cards and data:
+            if not cards and _looks_like_rocm_card(data):
                 cards = [data]
     elif isinstance(data, list):
         cards = data
@@ -174,7 +181,13 @@ def _parse_rocm_json(data: dict | list) -> dict[str, Any]:
         result["gpu_busy_pct"] = _safe_float(use)
         temp = card.get("Temperature (Sensor edge) (C)", card.get("Temperature (C)", card.get("temp")))
         result["gpu_temp_c"] = _safe_float(temp)
-        power = card.get("Average Graphics Package Power (W)", card.get("Power (W)", card.get("power")))
+        power = card.get(
+            "Average Graphics Package Power (W)",
+            card.get(
+                "Current Socket Graphics Package Power (W)",
+                card.get("Power (W)", card.get("power")),
+            ),
+        )
         result["gpu_power_w"] = _safe_float(power)
         vram_pct = card.get("VRAM (%)", card.get("vram_percent", card.get("vram_used_pct")))
         if vram_pct is None:
@@ -330,7 +343,10 @@ def _collect_gpu_sysfs() -> dict[str, Any]:
         "gpu_temp_c": None, "gpu_power_w": None, "gpu_vram_used_pct": None,
     }
 
-    cards = sorted(glob.glob("/sys/class/drm/card*"))
+    cards = sorted(
+        path for path in glob.glob("/sys/class/drm/card*")
+        if re.fullmatch(r"card\d+", path.rstrip("/").rsplit("/", 1)[-1])
+    )
     if not cards:
         return result
 
@@ -356,9 +372,9 @@ def _collect_gpu_sysfs() -> dict[str, Any]:
     for hwmon in hwmon_dirs:
         temp_path = f"{hwmon}/temp1_input"
         temp_str = read_sysfs_file(temp_path)
-        if temp_str:
+        if temp_str is not None:
             temp_millic = parse_int(temp_str)
-            if temp_millic:
+            if temp_millic is not None:
                 result["gpu_temp_c"] = temp_millic / 1000.0
                 break
 
@@ -390,6 +406,34 @@ def _safe_float(value: Any) -> float | None:
         if marker.lower() in s.lower():
             return None
     return parse_float(s)
+
+
+def _has_gpu_measurements(metrics: dict[str, Any] | None) -> bool:
+    """Return True when a GPU result contains at least one real measurement."""
+    if not metrics:
+        return False
+    return any(
+        metrics.get(field) is not None
+        for field in ("gpu_busy_pct", "gpu_temp_c", "gpu_power_w", "gpu_vram_used_pct")
+    )
+
+
+def _looks_like_rocm_card(data: dict[str, Any]) -> bool:
+    """Return True when a dict looks like a single rocm-smi card payload."""
+    rocm_keys = {
+        "GPU",
+        "Card name",
+        "GPU use (%)",
+        "GPU utilization (%)",
+        "Temperature (Sensor edge) (C)",
+        "Temperature (C)",
+        "Average Graphics Package Power (W)",
+        "Current Socket Graphics Package Power (W)",
+        "VRAM (%)",
+        "VRAM Total Memory (B)",
+        "VRAM Total Used Memory (B)",
+    }
+    return any(key in data for key in rocm_keys)
 
 
 def _compute_vram_pct(used: Any, total: Any) -> float | None:

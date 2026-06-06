@@ -1,5 +1,7 @@
 """Tests for GPU metric parsing (rocm-smi, nvidia-smi, helpers)."""
 
+from typing import Any, cast
+
 import pytest
 from pvemonitor.gpu import (
     _parse_rocm_text,
@@ -7,7 +9,9 @@ from pvemonitor.gpu import (
     _parse_nvidia_csv,
     _safe_float,
     _compute_vram_pct,
+    collect_gpu_metrics,
 )
+from pvemonitor.util import SubprocessError
 
 
 class TestRocmTextParsing:
@@ -78,6 +82,25 @@ class TestRocmJsonParsing:
         """Empty input should return None values."""
         result = _parse_rocm_json({})
         assert all(v is None for v in result.values())
+
+    def test_nested_card_payload_from_rocm_smi_json(self):
+        """rocm-smi may return metrics nested under card0/card1 keys."""
+        data = {
+            "card0": {
+                "Temperature (Sensor edge) (C)": "50.0",
+                "Current Socket Graphics Package Power (W)": "40.182",
+                "GPU use (%)": "25",
+                "VRAM Total Memory (B)": "1073741824",
+                "VRAM Total Used Memory (B)": "89604096",
+                "Card name": "AMD Radeon 780M",
+            }
+        }
+        result = _parse_rocm_json(data)
+        assert result["gpu_name"] == "AMD Radeon 780M"
+        assert result["gpu_busy_pct"] == 25.0
+        assert result["gpu_temp_c"] == 50.0
+        assert result["gpu_power_w"] == pytest.approx(40.182)
+        assert result["gpu_vram_used_pct"] == pytest.approx(8.345, rel=0.001)
 
 
 class TestSafeFloat:
@@ -170,3 +193,26 @@ class TestNvidiaCsvParsing:
         stdout = "Test GPU, 40, 50, 100.0, 0, 0"
         result = _parse_nvidia_csv(stdout)
         assert result["gpu_vram_used_pct"] is None
+
+
+class TestCollectionFallbacks:
+    def test_name_only_vendor_result_falls_back_to_sysfs(self, monkeypatch):
+        class DummyConfig:
+            rocm_smi_bin = "/usr/bin/rocm-smi"
+            nvidia_smi_bin = None
+            gpu_sysfs_fallback = True
+
+        monkeypatch.setattr(
+            "pvemonitor.gpu._collect_rocm_smi",
+            lambda _bin: {"gpu_name": "GPU 0", "gpu_busy_pct": None, "gpu_temp_c": None, "gpu_power_w": None, "gpu_vram_used_pct": None},
+        )
+        monkeypatch.setattr("pvemonitor.gpu._collect_nvidia_smi", lambda _bin: (_ for _ in ()).throw(SubprocessError("nvidia-smi not found")))
+        monkeypatch.setattr(
+            "pvemonitor.gpu._collect_gpu_sysfs",
+            lambda: {"gpu_name": "amdgpu", "gpu_busy_pct": 25.0, "gpu_temp_c": 50.0, "gpu_power_w": None, "gpu_vram_used_pct": None},
+        )
+
+        result = collect_gpu_metrics(cast(Any, DummyConfig()))
+        assert result["gpu_name"] == "amdgpu"
+        assert result["gpu_busy_pct"] == 25.0
+        assert result["gpu_temp_c"] == 50.0

@@ -49,6 +49,13 @@
   .time-controls .custom-range { display: none; align-items: center; gap: 6px; }
   .time-controls .custom-range.visible { display: flex; }
   .time-range-hint { font-size: 11px; color: var(--text-muted); margin-left: 8px; }
+  .refresh-toggle {
+    display: inline-flex; align-items: center; gap: 6px; margin-left: auto;
+    font-size: 12px; color: var(--text-muted); user-select: none;
+  }
+  .refresh-toggle input { accent-color: var(--accent); }
+  .refresh-toggle.live { color: var(--text); }
+  .refresh-toggle.disabled { color: var(--text-muted); }
   .charts-grid {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
     gap: 16px; margin-bottom: 16px;
@@ -127,6 +134,10 @@
     <button id="btn-apply-custom">Apply</button>
   </span>
   <span class="time-range-hint" id="range-hint"></span>
+  <label class="refresh-toggle" id="refresh-toggle-label">
+    <input type="checkbox" id="autorefresh-toggle" checked>
+    <span>Auto-refresh</span>
+  </label>
 </div>
 
 <div class="charts-grid" id="charts-root">
@@ -176,12 +187,27 @@
 })();
 
 // ─── Config ────────────────────────────────────────────────────────────
-const API_BASE = '', TOKEN_KEY = 'pvemonitor_token';
+const API_BASE = '', TOKEN_KEY = 'pvemonitor_token', AUTO_REFRESH_KEY = 'pvemonitor_auto_refresh';
 let REFRESH_S = 10, currentRange = '15m', customFrom = null, customTo = null, selectedGuest = null;
+let autoRefreshEnabled = localStorage.getItem(AUTO_REFRESH_KEY) !== '0';
 
 // ─── Helpers ───────────────────────────────────────────────────────────
 function getToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
 function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
+function setAutoRefresh(enabled) {
+  autoRefreshEnabled = !!enabled;
+  localStorage.setItem(AUTO_REFRESH_KEY, autoRefreshEnabled ? '1' : '0');
+}
+function refreshAllowedForRange(range=currentRange) { return autoRefreshEnabled && isLiveRange(range); }
+function syncAutoRefreshUI() {
+  const toggle = document.getElementById('autorefresh-toggle');
+  const label = document.getElementById('refresh-toggle-label');
+  if (toggle) toggle.checked = autoRefreshEnabled;
+  if (label) {
+    label.classList.toggle('live', refreshAllowedForRange());
+    label.classList.toggle('disabled', !refreshAllowedForRange());
+  }
+}
 function apiUrl(path) {
   let u = API_BASE + path;
   const t = getToken();
@@ -323,7 +349,8 @@ function makeChart(canvasId, chartData, scaleOverrides) {
       type: 'line',
       data: { labels: chartData.labels, datasets: chartData.datasets },
       options: {
-        responsive: false,
+        responsive: true,
+        maintainAspectRatio: false,
         animation: false,
         interaction: { mode: 'nearest', axis: 'x', intersect: false },
         plugins: {
@@ -517,12 +544,20 @@ function isLiveRange(range) { return range==='15m'||range==='1h'||range==='6h'||
 function updateRefresh(range) {
   const el = document.getElementById('refresh-indicator');
   if (isLiveRange(range)) {
-    REFRESH_S = range==='15m'?10:(range==='1h'?15:30);
-    el.textContent = '⟳ '+REFRESH_S+'s'; el.classList.remove('paused');
+    REFRESH_S = REFRESH_OVERRIDE_S || (range==='15m'?10:(range==='1h'?15:30));
+    if (autoRefreshEnabled) {
+      el.textContent = '⟳ '+REFRESH_S+'s';
+      el.classList.remove('paused');
+    } else {
+      el.textContent = '⟳ off';
+      el.classList.add('paused');
+    }
   } else {
     REFRESH_S = 300;
-    el.textContent = '⟳ paused (historical)'; el.classList.add('paused');
+    el.textContent = '⟳ paused (historical)';
+    el.classList.add('paused');
   }
+  syncAutoRefreshUI();
   startRefresh();
 }
 
@@ -560,13 +595,28 @@ document.getElementById('btn-apply-custom').addEventListener('click', async () =
 let refreshTimer = null;
 function startRefresh() {
   if (refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = setInterval(loadAll, REFRESH_S*1000);
+  refreshTimer = null;
+  if (!refreshAllowedForRange()) return;
+  refreshTimer = setInterval(() => {
+    loadAll().catch(e => {
+      showBanner('Auto-refresh error: ' + e.message, 'error');
+      console.error(e);
+    });
+  }, REFRESH_S*1000);
 }
 const urlParams = new URLSearchParams(window.location.search);
-if (urlParams.get('interval')) { REFRESH_S = parseInt(urlParams.get('interval'))||10; }
+const REFRESH_OVERRIDE_S = urlParams.get('interval') ? (parseInt(urlParams.get('interval'))||null) : null;
+const autoRefreshToggle = document.getElementById('autorefresh-toggle');
+autoRefreshToggle.checked = autoRefreshEnabled;
+autoRefreshToggle.addEventListener('change', () => {
+  setAutoRefresh(autoRefreshToggle.checked);
+  updateRefresh(currentRange);
+});
 
 // ─── Go ────────────────────────────────────────────────────────────────
-loadAll().then(() => startRefresh()).catch(e => {
+syncAutoRefreshUI();
+updateRefresh(currentRange);
+loadAll().catch(e => {
   showBanner('Startup error: ' + e.message, 'error');
   diag('FATAL: ' + e.message);
   console.error(e);

@@ -2,6 +2,23 @@
 
 Goal: log host CPU/GPU load and temperatures, plus per-VM/LXC state, uptime, CPU, and common resource metrics, into a durable SQLite database on the Proxmox host for long-term monitoring and easy future analysis during AI workloads.
 
+## 2026-08-10 revision — in-memory telemetry
+
+The "durable SQLite database" model has been replaced: all telemetry now lives
+in a RAM-resident SQLite store owned by a single always-on `pvemonitor serve`
+process (collector loop + API). The on-disk SQLite schema, queries, rollups,
+and rate logic are unchanged — only the backing store moved from a file to
+`:memory:`.
+
+- `storage.memory_limit_mb` caps estimated telemetry memory usage; the oldest
+  raw samples are evicted first, and the newest sample is always kept.
+- Full snapshots (SQLite backups) are written on a configurable interval and
+  on shutdown, then loaded on startup. CLI reports read the newest snapshot.
+- The old collector timer, API service, and maintenance service are replaced
+  by a single `pvemonitor.service` unit.
+
+See the [README](../README.md) for configuration and operations.
+
 ## 1. Design summary
 
 Use one lightweight Python project on the PVE host, stored under a single self-contained project root.

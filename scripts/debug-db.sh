@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
-# debug-db.sh — Quick database diagnostics (read-only).
+# debug-db.sh — Quick telemetry snapshot diagnostics (read-only).
 # Usage: ./scripts/debug-db.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 export PVEMONITOR_HOME="${PVEMONITOR_HOME:-$PROJECT_ROOT}"
-DB="$PVEMONITOR_HOME/runtime/db/metrics.sqlite3"
+SNAPSHOT_DIR="$PVEMONITOR_HOME/runtime/exports/snapshots"
+DB="$(ls -1t "$SNAPSHOT_DIR"/telemetry-*.sqlite3 2>/dev/null | head -n1 || true)"
 
 PY="$PVEMONITOR_HOME/.venv/bin/python3"
 
 echo "=== System ==="
 echo "Time UTC: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 echo "Epoch:    $(date +%s)"
-echo "DB:       $DB ($(stat -c%s "$DB" 2>/dev/null || echo '?') bytes)"
+if [ -z "$DB" ]; then
+    echo "Snapshot: none found in $SNAPSHOT_DIR"
+    echo "          Snapshots are written by \`pvemonitor serve\`."
+    exit 0
+fi
+echo "Snapshot: $DB ($(stat -c%s "$DB" 2>/dev/null || echo '?') bytes)"
 
 echo ""
 echo "=== Table counts ==="
@@ -60,10 +66,10 @@ conn.close()
 "
 
 echo ""
-echo "=== Collector timer ==="
-systemctl is-active pvemonitor-collector.timer 2>&1 || echo "  (not active)"
-systemctl is-enabled pvemonitor-collector.timer 2>&1 || echo "  (not enabled)"
+echo "=== PVEmonitor service ==="
+systemctl is-active pvemonitor.service 2>&1 || echo "  (not active)"
+systemctl is-enabled pvemonitor.service 2>&1 || echo "  (not enabled)"
 
 echo ""
-echo "=== Collector last run ==="
-systemctl show pvemonitor-collector.service -p ExecMainExitTimestamp 2>&1 || echo "  (no data)"
+echo "=== Service last exit ==="
+systemctl show pvemonitor.service -p ExecMainExitTimestamp 2>&1 || echo "  (no data)"

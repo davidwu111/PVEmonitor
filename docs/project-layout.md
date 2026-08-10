@@ -50,6 +50,7 @@ The design below uses a generic root variable:
 │       ├── host.py
 │       ├── guests.py
 │       ├── rates.py
+│       ├── storage.py
 │       ├── schema.py
 │       ├── locking.py
 │       ├── reporting.py
@@ -73,40 +74,25 @@ The design below uses a generic root variable:
 │   │   ├── guest_cpu_top.sql
 │   │   ├── guest_state_history.sql
 │   │   └── latest_guest_status.sql
-│   └── maintenance/
-│       ├── wal_checkpoint.sql
-│       ├── optimize.sql
-│       └── vacuum.sql
 ├── scripts/
 │   ├── bootstrap-venv.sh
 │   ├── run-collector.sh
 │   ├── report-latest.sh
 │   ├── report-host-gpu.sh
 │   ├── backup-db.sh
+│   ├── install-systemd.sh
+│   ├── uninstall-systemd.sh
 │   └── healthcheck.sh
 ├── systemd/
 │   ├── README.md
-│   ├── pvemonitor-collector.service
-│   ├── pvemonitor-collector.timer
-│   ├── pvemonitor-api.service
-│   ├── pvemonitor-maintenance.service
-│   └── pvemonitor-maintenance.timer
+│   └── pvemonitor.service
 ├── runtime/
-│   ├── db/
-│   │   ├── metrics.sqlite3
-│   │   ├── metrics.sqlite3-shm
-│   │   └── metrics.sqlite3-wal
 │   ├── logs/
-│   │   ├── collector.log
-│   │   ├── collector.err.log
-│   │   └── maintenance.log
+│   │   └── collector.log
 │   ├── exports/
-│   │   ├── csv/
 │   │   └── snapshots/
 │   ├── backups/
-│   │   └── metrics-YYYYMMDD.sqlite3
-│   ├── locks/
-│   │   └── collector.lock
+│   │   └── metrics-YYYYMMDD.sqlite3 (snapshot copies)
 ├── tests/
 │   ├── conftest.py
 │   ├── test_schema.py
@@ -219,13 +205,15 @@ Recommended module split:
 - __main__.py
   - supports `python -m pvemonitor`
 - cli.py
-  - command-line entrypoints such as `collect`, `report-latest`, `init-db`
+  - command-line entrypoints such as `collect`, `serve`, `report-latest`, `health`
 - collector.py
-  - main collection loop for one sample
+  - one collection run (`collect_once`) plus the background loop used by `serve`
 - config.py
   - load and validate YAML config, derive project-relative paths
 - db.py
-  - sqlite connection, inserts, transactions, migrations bootstrap
+  - SQLite insert helpers and migrations (schema applied to the in-memory store)
+- storage.py
+  - in-memory telemetry store: locking, memory-cap eviction, snapshots
 - gpu.py
   - rocm-smi and sysfs collection
 - host.py
@@ -237,7 +225,7 @@ Recommended module split:
 - schema.py
   - schema creation / migration helpers if not using raw SQL only
 - locking.py
-  - non-overlap lock handling for timer-driven collection
+  - legacy non-overlap lock handling (no longer used by the single-service daemon)
 - reporting.py
   - reusable report functions
 - util.py
@@ -245,7 +233,7 @@ Recommended module split:
 - api.py
   - FastAPI application creation, lifespan handler, static file mount, CORS
 - api_routes/
-  - health.py — `GET /api/health`, DB connection check, latest sample freshness
+  - health.py — `GET /api/health`, store readability, latest sample freshness, memory usage
   - host.py — `GET /api/host/latest`, `/api/host/range`, `/api/host/summary`
   - guests.py — `GET /api/guests`, `/api/guests/<vmid>/range`, `/api/guests/<vmid>/transitions`
 - static/
@@ -269,9 +257,6 @@ Use three subfolders:
   - migrations are append-only; never modify an applied migration
 - queries/
   - reusable analysis queries
-- maintenance/
-  - checkpoint, vacuum, retention helpers
-
 Reason:
 - SQL remains inspectable without reading Python
 - makes ad hoc sqlite3 use much easier later
@@ -290,9 +275,11 @@ Examples:
 - report-host-gpu.sh
   - show recent GPU temp/load/power trend
 - backup-db.sh
-  - use sqlite3 `.backup` safely into runtime/backups/
+  - copy the newest telemetry snapshot into runtime/backups/
 - healthcheck.sh
-  - verify venv, DB readability, rocm-smi availability, and latest sample freshness
+  - live API health check with snapshot fallback (exit 0/1/2)
+- install-systemd.sh / uninstall-systemd.sh
+  - install/remove the single `pvemonitor.service` unit (cleans legacy units)
 
 Reason:
 - keeps operational commands short and consistent
@@ -304,35 +291,29 @@ Checked-in unit files.
 Recommended units:
 - README.md
   - install and troubleshooting notes for the operator
-- pvemonitor-collector.service
-  - oneshot service for one collection pass using `<PVEMONITOR_HOME>/.venv/bin/python`
-  - Type=oneshot, RemainAfterExit=no
-- pvemonitor-collector.timer
-  - OnUnitActiveSec=10s (fires 10s after service FINISHES, preventing stacking)
-  - AccuracySec=1s
-- pvemonitor-api.service
-  - persistent service for the FastAPI + dashboard server
+- pvemonitor.service
+  - single always-on service running the collection loop + FastAPI + dashboard
   - Type=simple, Restart=always, RestartSec=5s
   - After=network.target
   - ExecStart: `<PVEMONITOR_HOME>/.venv/bin/python -m pvemonitor serve`
   - listens on 0.0.0.0:8806 for LAN access
-- pvemonitor-maintenance.service
-  - periodic WAL checkpoint / backup / vacuum tasks
-- pvemonitor-maintenance.timer
-  - runs lower-frequency housekeeping jobs (daily)
+  - all telemetry lives in memory; snapshots are written by the service itself
+
+Legacy `pvemonitor-collector.*`, `pvemonitor-api.service`, and
+`pvemonitor-maintenance.*` units are removed; `install-systemd.sh` cleans them
+up automatically when upgrading.
 
 Installation:
 - keep the canonical unit files in `<PVEMONITOR_HOME>/systemd/`
 - install as **copies** (not symlinks) into `/etc/systemd/system/`:
   ```sh
-  sudo cp /opt/PVEmonitor/systemd/pvemonitor-*.service /etc/systemd/system/
-  sudo cp /opt/PVEmonitor/systemd/pvemonitor-*.timer /etc/systemd/system/
+  sudo cp /opt/PVEmonitor/systemd/pvemonitor.service /etc/systemd/system/
   sudo systemctl daemon-reload
-  sudo systemctl enable --now pvemonitor-collector.timer
+  sudo systemctl enable --now pvemonitor.service
   ```
 - use copies (not symlinks) because systemd warns about symlinked unit files
 - the checked-in copies in `<PVEMONITOR_HOME>/systemd/` are the source of truth; re-copy after editing them
-- after editing, run `sudo systemctl daemon-reload && sudo systemctl restart pvemonitor-collector.timer`
+- after editing, run `sudo systemctl daemon-reload && sudo systemctl restart pvemonitor.service`
 
 ### runtime/
 All mutable runtime data under one subtree.
@@ -341,15 +322,13 @@ This is the most important requirement from your note.
 Nothing runtime-related should spill into /var/lib, /var/log, or /tmp if you want a fully self-contained project folder. Use Python's `tempfile` module for any temporary file needs.
 
 Subfolders:
-- db/
-  - SQLite DB and WAL/SHM sidecar files
+- exports/snapshots/
+  - periodic full snapshots of the in-memory telemetry store (SQLite backups)
 - logs/
   - collector/service logs you want to keep in-project
   - log rotation via Python RotatingFileHandler (10 MB, 5 backups) or journald
-- exports/
-  - generated CSV exports or point-in-time JSON snapshots
 - backups/
-  - DB backup copies
+  - copies of the newest telemetry snapshot
   - retention: keep last 7 daily backups, delete older
   - also plan an off-host backup target (rsync/scp)
 
@@ -359,9 +338,8 @@ Reason:
 - easy to inspect current state without hunting through the system
 
 Important SQLite note:
-- WAL mode creates `metrics.sqlite3-wal` and `metrics.sqlite3-shm`
-- these must live beside the DB file in runtime/db/
-- do not separate them into another log directory
+- the live telemetry store is `:memory:` inside the `serve` process
+- only snapshot files touch disk; keep them under `runtime/exports/snapshots/`
 
 ### tests/
 Automated tests.
@@ -387,10 +365,9 @@ Reason:
 ## Recommended file path policy
 
 Use these concrete runtime paths inside the project root:
-- DB: `<PVEMONITOR_HOME>/runtime/db/metrics.sqlite3`
+- legacy DB (one-time import only): `<PVEMONITOR_HOME>/runtime/db/metrics.sqlite3`
+- telemetry snapshots: `<PVEMONITOR_HOME>/runtime/exports/snapshots/`
 - collector log: `<PVEMONITOR_HOME>/runtime/logs/collector.log`
-- collector error log: `<PVEMONITOR_HOME>/runtime/logs/collector.err.log`
-- lock file: `<PVEMONITOR_HOME>/runtime/locks/collector.lock`
 - exports: `<PVEMONITOR_HOME>/runtime/exports/`
 - backups: `<PVEMONITOR_HOME>/runtime/backups/`
 
@@ -411,7 +388,7 @@ The project should depend on one environment variable:
 Everything else should be derived from it.
 
 Example:
-- DB_PATH = $PVEMONITOR_HOME/runtime/db/metrics.sqlite3
+- SNAPSHOT_DIR = $PVEMONITOR_HOME/runtime/exports/snapshots
 - PYTHON_BIN = $PVEMONITOR_HOME/.venv/bin/python
 - CONFIG_PATH = $PVEMONITOR_HOME/config/monitor.yaml
 - QUERY_DIR = $PVEMONITOR_HOME/sql/queries
@@ -544,16 +521,11 @@ If we build this now, I recommend these minimum files first:
 │   └── healthcheck.sh
 ├── systemd/
 │   ├── README.md
-│   ├── pvemonitor-collector.service
-│   ├── pvemonitor-collector.timer
-│   ├── pvemonitor-api.service
-│   ├── pvemonitor-maintenance.service
-│   └── pvemonitor-maintenance.timer
+│   └── pvemonitor.service
 ├── runtime/
-│   ├── db/
+│   ├── exports/snapshots/
 │   ├── logs/
-│   ├── backups/
-│   └── locks/
+│   └── backups/
 └── tests/
     ├── conftest.py
     ├── test_schema.py

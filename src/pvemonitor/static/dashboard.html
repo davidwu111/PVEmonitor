@@ -528,7 +528,7 @@ async function loadHealth() {
     if (!h) return null;
     document.getElementById('hostname').textContent = h.hostname ? 'host: ' + h.hostname : (h.latest_sample_ts ? 'host: pve' : 'host: —');
     document.getElementById('sample-count').textContent = 'samples: ' + (h.total_samples?.toLocaleString()||0);
-    document.getElementById('db-size').textContent = 'db: ' + (h.db_size_bytes?(h.db_size_bytes/1048576).toFixed(1):'0') + ' MB';
+    document.getElementById('db-size').textContent = 'mem: ' + (h.memory_used_bytes?(h.memory_used_bytes/1048576).toFixed(1):'0') + ' MB';
     setDiagState({ totalSamples: h.total_samples || 0, latestSampleTs: h.latest_sample_ts || diagState.latestSampleTs });
     diag('health OK');
     return h;

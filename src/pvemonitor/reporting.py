@@ -1,21 +1,44 @@
 """Report generation for PVEmonitor.
 
-Provides human-readable output for the CLI report subcommands.
+Provides human-readable output for the CLI report subcommands. Reports read
+the newest telemetry snapshot from disk, because the live in-memory store is
+owned by the ``serve`` process.
 """
 
 from __future__ import annotations
 
+import logging
 import sqlite3
-from typing import Any
 
 from .config import Config, get_config
-from .db import get_readonly_connection
+from .storage import latest_snapshot
+
+logger = logging.getLogger(__name__)
 
 
-def _connect_readonly(config: Config | None = None) -> sqlite3.Connection:
+def _open_latest_snapshot(config: Config | None = None) -> sqlite3.Connection | None:
+    """Open the newest telemetry snapshot as an in-memory database.
+
+    Returns None when no snapshot has been written yet.
+    """
     if config is None:
         config = get_config()
-    return get_readonly_connection(str(config.db_path))
+    path = latest_snapshot(config.snapshot_dir)
+    if path is None:
+        return None
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    src = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        try:
+            src.backup(conn)
+        except sqlite3.Error:
+            logger.warning("Snapshot unreadable: %s", path)
+            conn.close()
+            return None
+    finally:
+        src.close()
+    return conn
 
 
 def report_latest(config: Config | None = None) -> str:
@@ -24,7 +47,12 @@ def report_latest(config: Config | None = None) -> str:
     Returns a formatted multi-line string.
     """
     config = config or get_config()
-    conn = _connect_readonly(config)
+    conn = _open_latest_snapshot(config)
+    if conn is None:
+        return (
+            "No telemetry snapshot found yet — start `pvemonitor serve` and "
+            "wait for the first snapshot to be written."
+        )
     lines: list[str] = []
 
     try:
@@ -90,7 +118,12 @@ def report_latest(config: Config | None = None) -> str:
 def report_gpu(config: Config | None = None, hours: int = 2) -> str:
     """Generate a recent GPU trend report."""
     config = config or get_config()
-    conn = _connect_readonly(config)
+    conn = _open_latest_snapshot(config)
+    if conn is None:
+        return (
+            "No telemetry snapshot found yet — start `pvemonitor serve` and "
+            "wait for the first snapshot to be written."
+        )
     lines: list[str] = []
 
     try:

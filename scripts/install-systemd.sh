@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# install-systemd.sh — Install PVEmonitor systemd units onto the PVE host.
+# install-systemd.sh — Install the PVEmonitor systemd service.
 #
-# Replaces @@PVEMONITOR_HOME@@ placeholders in the unit files, copies them
-# into /etc/systemd/system/, reloads systemd, and enables the timer + API.
+# Replaces @@PVEMONITOR_HOME@@ placeholders, copies the unit into
+# /etc/systemd/system/, removes legacy units from previous versions,
+# reloads systemd, and enables/starts the service.
 #
 # Safe to run repeatedly (idempotent).
 #
@@ -19,12 +20,23 @@ export PVEMONITOR_HOME="${PVEMONITOR_HOME:-$PROJECT_ROOT}"
 SYSTEMD_DIR="/etc/systemd/system"
 UNITS_DIR="$PVEMONITOR_HOME/systemd"
 
+SERVICE_UNIT="pvemonitor.service"
+
+# Units from older PVEmonitor versions (removed during install)
+LEGACY_UNITS=(
+    "pvemonitor-collector.service"
+    "pvemonitor-collector.timer"
+    "pvemonitor-api.service"
+    "pvemonitor-maintenance.service"
+    "pvemonitor-maintenance.timer"
+)
+
 ENABLE_UNITS=true
 if [ "${1:-}" = "--no-enable" ]; then
     ENABLE_UNITS=false
 fi
 
-echo "==> Installing PVEmonitor systemd units"
+echo "==> Installing PVEmonitor systemd service"
 echo "    PVEMONITOR_HOME=$PVEMONITOR_HOME"
 echo "    Destination: $SYSTEMD_DIR"
 
@@ -35,27 +47,24 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-# Verify unit files exist
-REQUIRED_FILES=(
-    "pvemonitor-collector.service"
-    "pvemonitor-collector.timer"
-    "pvemonitor-api.service"
-    "pvemonitor-maintenance.service"
-    "pvemonitor-maintenance.timer"
-)
-for f in "${REQUIRED_FILES[@]}"; do
-    if [ ! -f "$UNITS_DIR/$f" ]; then
-        echo "ERROR: Missing unit file: $UNITS_DIR/$f"
-        exit 1
-    fi
-done
+# Verify the unit file exists
+if [ ! -f "$UNITS_DIR/$SERVICE_UNIT" ]; then
+    echo "ERROR: Missing unit file: $UNITS_DIR/$SERVICE_UNIT"
+    exit 1
+fi
 
-# Copy unit files with placeholder substitution
-echo "==> Copying unit files (replacing @@PVEMONITOR_HOME@@) ..."
-for f in "${REQUIRED_FILES[@]}"; do
-    sed "s|@@PVEMONITOR_HOME@@|$PVEMONITOR_HOME|g" \
-        "$UNITS_DIR/$f" > "$SYSTEMD_DIR/$f"
-    echo "    $f"
+# Copy unit file with placeholder substitution
+echo "==> Copying unit file (replacing @@PVEMONITOR_HOME@@) ..."
+sed "s|@@PVEMONITOR_HOME@@|$PVEMONITOR_HOME|g" \
+    "$UNITS_DIR/$SERVICE_UNIT" > "$SYSTEMD_DIR/$SERVICE_UNIT"
+echo "    $SERVICE_UNIT"
+
+# Stop, disable, and remove legacy units (safe on fresh installs too)
+echo "==> Removing legacy units ..."
+for unit in "${LEGACY_UNITS[@]}"; do
+    systemctl stop "$unit" 2>/dev/null || true
+    systemctl disable "$unit" 2>/dev/null || true
+    rm -f "$SYSTEMD_DIR/$unit"
 done
 
 # Reload systemd
@@ -63,33 +72,19 @@ echo "==> Reloading systemd ..."
 systemctl daemon-reload
 
 if $ENABLE_UNITS; then
-    echo "==> Enabling and starting units ..."
-
-    # Stop any existing instances first (clean slate)
-    systemctl stop pvemonitor-collector.timer 2>/dev/null || true
-    systemctl stop pvemonitor-collector.service 2>/dev/null || true
-    systemctl stop pvemonitor-api.service 2>/dev/null || true
-
-    # Enable and start
-    systemctl enable --now pvemonitor-collector.timer
-    systemctl enable --now pvemonitor-api.service
-    systemctl enable --now pvemonitor-maintenance.timer
-
+    echo "==> Enabling and starting the service ..."
+    systemctl enable --now "$SERVICE_UNIT"
     echo ""
-    echo "==> Units enabled and started."
+    echo "==> Service enabled and started."
 else
     echo ""
-    echo "==> Units copied (not enabled). To start manually:"
-    echo "    sudo systemctl enable --now pvemonitor-collector.timer"
-    echo "    sudo systemctl enable --now pvemonitor-api.service"
-    echo "    sudo systemctl enable --now pvemonitor-maintenance.timer"
+    echo "==> Unit copied (not enabled). To start manually:"
+    echo "    sudo systemctl enable --now $SERVICE_UNIT"
 fi
 
 echo ""
 echo "==> Status check:"
 echo ""
-systemctl status pvemonitor-collector.timer --no-pager -l 2>/dev/null || echo "    (timer not active)"
-echo ""
-systemctl status pvemonitor-api.service --no-pager -l 2>/dev/null || echo "    (API not active)"
+systemctl status "$SERVICE_UNIT" --no-pager -l 2>/dev/null || echo "    (service not active)"
 echo ""
 echo "==> Verify: curl http://localhost:8806/api/health"

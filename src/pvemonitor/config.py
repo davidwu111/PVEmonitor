@@ -59,6 +59,14 @@ DEFAULTS: dict[str, Any] = {
         "rollup_5m_days": 365,
         "maintenance_interval_samples": 360,
     },
+    "storage": {
+        "memory_limit_mb": 256,
+        "snapshot_enabled": True,
+        "snapshot_interval_minutes": 60,
+        "snapshot_keep": 7,
+        "snapshot_dir": "runtime/exports/snapshots",
+        "import_legacy_db": True,
+    },
 }
 
 
@@ -117,15 +125,25 @@ class Config:
         merged = _deep_merge(DEFAULTS, raw)
         self._data = merged
 
+        # Validate storage settings
+        if merged["storage"]["memory_limit_mb"] < 1:
+            raise ValueError("storage.memory_limit_mb must be >= 1")
+        if merged["storage"]["snapshot_interval_minutes"] < 1:
+            raise ValueError("storage.snapshot_interval_minutes must be >= 1")
+        if merged["storage"]["snapshot_keep"] < 1:
+            raise ValueError("storage.snapshot_keep must be >= 1")
+
         # Resolve paths
         self.db_path = self._resolve_path(merged["paths"]["db"])
         self.log_path = self._resolve_path(merged["paths"]["log"])
         self.lock_path = self._resolve_path(merged["paths"]["lock"])
+        self.snapshot_dir = self._resolve_path(merged["storage"]["snapshot_dir"])
 
         # Ensure runtime directories exist
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.snapshot_dir.mkdir(parents=True, exist_ok=True)
 
     def _resolve_path(self, rel_path: str) -> Path:
         """Resolve a config path (absolute or relative to PVEMONITOR_HOME)."""
@@ -244,6 +262,34 @@ class Config:
     def maintenance_interval_samples(self) -> int:
         return self._data["retention"]["maintenance_interval_samples"]
 
+    @property
+    def memory_limit_mb(self) -> int:
+        return self._data["storage"]["memory_limit_mb"]
+
+    @property
+    def memory_limit_bytes(self) -> int:
+        return self.memory_limit_mb * 1024 * 1024
+
+    @property
+    def snapshot_enabled(self) -> bool:
+        return self._data["storage"]["snapshot_enabled"]
+
+    @property
+    def snapshot_interval_minutes(self) -> int:
+        return self._data["storage"]["snapshot_interval_minutes"]
+
+    @property
+    def snapshot_interval_s(self) -> int:
+        return self.snapshot_interval_minutes * 60
+
+    @property
+    def snapshot_keep(self) -> int:
+        return self._data["storage"]["snapshot_keep"]
+
+    @property
+    def import_legacy_db(self) -> bool:
+        return self._data["storage"]["import_legacy_db"]
+
     def as_dict(self) -> dict:
         """Return resolved config for display (paths resolved)."""
         return {
@@ -272,6 +318,12 @@ class Config:
             "rollup_1m_retention_days": self.rollup_1m_retention_days,
             "rollup_5m_retention_days": self.rollup_5m_retention_days,
             "maintenance_interval_samples": self.maintenance_interval_samples,
+            "memory_limit_mb": self.memory_limit_mb,
+            "snapshot_enabled": self.snapshot_enabled,
+            "snapshot_interval_minutes": self.snapshot_interval_minutes,
+            "snapshot_keep": self.snapshot_keep,
+            "snapshot_dir": str(self.snapshot_dir),
+            "import_legacy_db": self.import_legacy_db,
             "collector_version": self.collector_version,
         }
 

@@ -102,4 +102,4 @@ fi
 echo ""
 echo "==> Bootstrap complete!"
 echo "    Run:    $PVEMONITOR_HOME/.venv/bin/python -m pvemonitor --help"
-echo "    Init:   $PVEMONITOR_HOME/.venv/bin/python -m pvemonitor init-db"
+echo "    Serve:  $PVEMONITOR_HOME/.venv/bin/python -m pvemonitor serve"

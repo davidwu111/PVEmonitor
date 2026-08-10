@@ -2,6 +2,19 @@
 
 Last updated: 2026-06-06
 
+## Revision 2026-08-10 — In-memory telemetry
+
+- [x] All telemetry moved into a RAM-resident SQLite store (`storage.py`)
+- [x] Configurable memory cap (`storage.memory_limit_mb`, default 256 MB) with
+      oldest-first raw-sample eviction (newest sample always kept)
+- [x] Periodic full snapshots (configurable interval + shutdown) with startup
+      load and snapshot retention (`snapshot_keep`)
+- [x] One-time read-only import of the legacy `runtime/db/metrics.sqlite3`
+- [x] Single `pvemonitor serve` process runs collection loop + API; old
+      collector timer / API / maintenance units replaced by `pvemonitor.service`
+- [x] CLI reports and health read the newest snapshot (live API fallback for health)
+- [x] Storage config exposed via `pvemonitor config` and `/api/health`
+
 ## Phase 1 — Complete ✓
 
 ### Core Infrastructure

@@ -18,6 +18,7 @@ export PVEMONITOR_HOME="${PVEMONITOR_HOME:-$PROJECT_ROOT}"
 SYSTEMD_DIR="/etc/systemd/system"
 
 UNITS=(
+    "pvemonitor.service"
     "pvemonitor-collector.service"
     "pvemonitor-collector.timer"
     "pvemonitor-api.service"
@@ -120,7 +121,7 @@ echo ""
 echo "    Systemd units have been removed."
 if ! $PURGE; then
     echo "    Project directory kept at: $PVEMONITOR_HOME"
-    echo "    Database and logs are preserved."
+    echo "    Telemetry snapshots and logs are preserved."
     echo ""
     echo "    To also delete the project and all data:"
     echo "        sudo $0 --purge"

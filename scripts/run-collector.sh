@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# run-collector.sh — Run one PVEmonitor collection cycle.
+# run-collector.sh — Run one debug collection cycle.
 #
 # Usage: ./scripts/run-collector.sh [--force]
+#
+# NOTE: This runs a one-shot collection into a throwaway store and prints a
+# summary. The live service (pvemonitor.service) collects automatically.
 
 set -euo pipefail
 

@@ -45,3 +45,13 @@ retention:
   rollup_1m_days: 90            # 1-minute rollups for medium-range charts
   rollup_5m_days: 365           # 5-minute rollups for long-range charts
   maintenance_interval_samples: 360  # prune roughly hourly at 10s sampling
+
+# Telemetry is kept in memory (no per-sample disk writes).
+# Snapshots are full copies written to disk on an interval and on shutdown.
+storage:
+  memory_limit_mb: 256           # hard cap on estimated telemetry memory usage
+  snapshot_enabled: true         # false = run memory-only, no disk snapshots
+  snapshot_interval_minutes: 60  # how often a full snapshot is written
+  snapshot_keep: 7               # number of snapshot files to retain
+  snapshot_dir: runtime/exports/snapshots
+  import_legacy_db: true         # one-time import of runtime/db/metrics.sqlite3

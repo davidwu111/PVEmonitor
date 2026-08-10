@@ -3,8 +3,10 @@
 Lightweight Proxmox VE host and guest monitor for AI workloads.
 
 Collects host CPU/GPU load and temperatures, plus per-VM/LXC state, uptime, CPU,
-and common resource metrics into a durable SQLite database for long-term
-monitoring and easy analysis.
+and common resource metrics. All telemetry is kept **in memory** (configurable
+cap) so the disk is only touched by optional periodic snapshots — great for
+reducing HDD/SSD wear. A single `pvemonitor serve` process runs the collector
+loop and the REST API.
 
 ## Quick start
 
@@ -12,16 +14,13 @@ monitoring and easy analysis.
 # 1. Bootstrap Python virtual environment
 ./scripts/bootstrap-venv.sh
 
-# 2. Initialize the database
-.venv/bin/python -m pvemonitor init-db
-
-# 3. Verify a single collection works
+# 2. Verify a single collection works (debug one-shot)
 .venv/bin/python -m pvemonitor collect
 
-# 4. Install systemd units (starts collector timer + API server)
+# 3. Install systemd units (starts the collector + API service)
 sudo ./scripts/install-systemd.sh
 
-# 5. Open dashboard at http://<host>:8806
+# 4. Open dashboard at http://<host>:8806
 ```
 
 To try the API without installing systemd:
@@ -105,25 +104,25 @@ so up/down history is always queryable.
 | **GPU monitoring** | Multi-vendor: AMD (rocm-smi), NVIDIA (nvidia-smi), sysfs for basic metrics |
 | **Guest monitoring** | Per-VM/LXC CPU, memory, disk I/O rates, network throughput |
 | **Pressure Stall (PSI)** | CPU, IO, memory pressure (some/full, avg10/60/300) |
-| **SQLite storage** | WAL mode, migration-tracked schema, indexed for time-range queries, raw retention, and rollups |
+| **In-memory storage** | All telemetry lives in RAM (configurable cap); no per-sample disk writes |
+| **Snapshots** | Full store copies written on a configurable interval and on shutdown; loaded on startup |
 | **REST API** | FastAPI on :8806, optional shared-secret auth, CORS enabled |
 | **Dashboard** | Single-page Chart.js app — live view + historical (yesterday, 7d, 30d, custom range) with automatic raw/rollup selection |
-| **Systemd integration** | Timer-driven collection (10s), persistent API service, daily maintenance |
-| **Safe collection** | Non-overlap lock with stale detection, subprocess timeouts, partial failure tolerance |
+| **Systemd integration** | Single always-on service running collection + API |
+| **Safe collection** | Subprocess timeouts, partial failure tolerance |
 | **Rate calculation** | Disk/network bps from cumulative counters with max interval guard, counter reset detection |
-| **Migrations** | Versioned, append-only SQL files applied in order on startup |
+| **Migrations** | Versioned, append-only SQL files applied in order on startup (in-memory schema) |
 
 ## CLI reference
 
 | Command | Description |
 |---------|-------------|
-| `pvemonitor collect` | Run one full collection (host + guests) |
-| `pvemonitor collect --force` | Skip stale lock check |
-| `pvemonitor init-db` | Create or upgrade schema |
-| `pvemonitor serve` | Start FastAPI server on 0.0.0.0:8806 |
-| `pvemonitor report-latest` | Latest host + guest status |
-| `pvemonitor report-gpu` | Recent GPU trend |
-| `pvemonitor health` | Health check (exit 0/1/2) |
+| `pvemonitor collect` | Debug one-shot collection (throwaway store, prints summary) |
+| `pvemonitor serve` | Start the collector + API service (all telemetry in memory) |
+| `pvemonitor init-db` | Compatibility no-op (schema is created automatically) |
+| `pvemonitor report-latest` | Latest host + guest status (from newest snapshot) |
+| `pvemonitor report-gpu` | Recent GPU trend (from newest snapshot) |
+| `pvemonitor health` | Health check (exit 0/1/2) — live API, snapshot fallback |
 | `pvemonitor config` | Print resolved config |
 
 ## Scripts
@@ -133,11 +132,11 @@ so up/down history is always queryable.
 | `bootstrap-venv.sh` | Create .venv, install dependencies, editable install |
 | `install-systemd.sh` | Copy units to /etc/systemd/system/, enable and start |
 | `uninstall-systemd.sh` | Stop services, remove units (--purge to delete project) |
-| `run-collector.sh` | Run one collection cycle |
+| `run-collector.sh` | Run one debug collection cycle |
 | `report-latest.sh` | Print latest host + guest status |
 | `report-host-gpu.sh` | Print recent GPU trend |
 | `healthcheck.sh` | Health check (exit 0/1/2) |
-| `backup-db.sh` | SQLite .backup with 7-day retention |
+| `backup-db.sh` | Copy newest telemetry snapshot to runtime/backups (7-day retention) |
 
 ## Retention and rollups
 
@@ -146,6 +145,27 @@ Default behavior:
 - 1-minute host/guest rollups: keep 90 days
 - 5-minute host/guest rollups: keep 365 days
 - pruning runs roughly hourly (`maintenance_interval_samples: 360` at 10s sampling)
+
+Storage is bounded by `storage.memory_limit_mb` (default 256 MB). Estimated
+usage is checked after every sample and the oldest raw samples are evicted
+first (the newest sample is always kept), so the store never exceeds the cap.
+Time-based retention still applies for rollups.
+
+```yaml
+storage:
+  memory_limit_mb: 256           # hard cap on estimated telemetry memory usage
+  snapshot_enabled: true         # false = memory-only, no disk snapshots
+  snapshot_interval_minutes: 60  # how often a full snapshot is written
+  snapshot_keep: 7               # number of snapshot files to retain
+  snapshot_dir: runtime/exports/snapshots
+  import_legacy_db: true         # one-time import of runtime/db/metrics.sqlite3
+```
+
+Snapshots are full SQLite copies written by `serve` on the configured interval
+and on graceful shutdown, then loaded back on startup. CLI reports read the
+newest snapshot, so they are at most one snapshot interval stale. On first
+startup after upgrading, an existing `runtime/db/metrics.sqlite3` is imported
+once (read-only) if no snapshot exists yet.
 
 Range selection behavior:
 - `<= 24h`: raw samples
@@ -166,6 +186,11 @@ The dashboard uses API auto-resolution selection by default, so long-range chart
 - **Downsampling**: For very long time ranges (30d+) with 10s sampling,
   the API/dashboard now switches automatically to rollups (1m, then 5m).
   Adjust retention windows in `config/monitor.yaml` if you want longer raw history.
+- **Memory-only history**: Telemetry is not written per-sample, so history
+  beyond the newest snapshot is lost if the service is restarted without a
+  snapshot (set `snapshot_interval_minutes` to your desired recovery window).
+- **CLI reports are snapshot-based**: `report-latest`, `report-gpu`, and the
+  `health` fallback read the newest snapshot, not the live store.
 
 ## Documentation
 

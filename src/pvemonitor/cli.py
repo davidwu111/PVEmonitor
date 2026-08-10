@@ -29,7 +29,7 @@ def _get_parser() -> argparse.ArgumentParser:
     collect_parser = sub.add_parser("collect", help="Run one full collection")
     collect_parser.add_argument(
         "--force", action="store_true",
-        help="Force lock acquisition (skip stale checks)",
+        help="Accepted for CLI compatibility (no longer needed — no lock file)",
     )
     collect_parser.add_argument(
         "--config", type=str, default=None,
@@ -141,16 +141,11 @@ def _cmd_collect(args: Any) -> None:
 
 def _cmd_init_db(args: Any) -> None:
     from .config import get_config
-    from .db import ensure_schema, get_connection
 
     config = get_config(args.config)
-    conn = get_connection(str(config.db_path))
-    try:
-        ensure_schema(conn, config)
-        conn.commit()
-        print(f"Database schema initialized at {config.db_path}")
-    finally:
-        conn.close()
+    config.snapshot_dir.mkdir(parents=True, exist_ok=True)
+    print("Telemetry is stored in memory — schema is created automatically on `serve`.")
+    print(f"Runtime directories ready under {config.home}")
 
 
 def _cmd_serve(args: Any) -> None:
@@ -185,58 +180,61 @@ def _cmd_report_gpu(args: Any) -> None:
 
 def _cmd_health(args: Any) -> None:
     import json
-    import os
+    import time
 
     from .config import get_config
-    from .db import get_readonly_connection
 
     config = get_config(args.config)
-    lock_path = config.lock_path
 
     checks: dict = {"status": "ok", "checks": {}}
 
-    # Check 1: DB readable
-    try:
-        conn = get_readonly_connection(str(config.db_path))
-        row = conn.execute("SELECT MAX(id), MAX(epoch_s) FROM samples").fetchone()
-        latest_id = row[0]
-        latest_epoch = row[1]
-        conn.close()
-
-        if latest_id is None:
-            checks["status"] = "degraded"
-            checks["checks"]["db"] = "degraded — no samples"
-        else:
-            import time
-            age_s = int(time.time()) - latest_epoch
-            checks["checks"]["db"] = {
-                "status": "ok",
-                "latest_sample_id": latest_id,
-                "latest_sample_age_s": age_s,
-            }
-            if age_s > (config.sample_interval_s * 5):
-                checks["checks"]["db"]["status"] = "degraded"
-                checks["status"] = "degraded"
-    except Exception as exc:
-        checks["status"] = "dead"
-        checks["checks"]["db"] = f"dead — {exc}"
-
-    # Check 2: Lock file not stale
-    if lock_path.exists():
-        from .locking import _read_lock_file, _pid_alive
-        existing = _read_lock_file(lock_path)
-        if existing:
-            pid, lock_ts = existing
-            if not _pid_alive(pid):
-                checks["checks"]["lock"] = "stale — PID dead"
-                if checks["status"] == "ok":
-                    checks["status"] = "degraded"
-            else:
-                checks["checks"]["lock"] = "ok — locked by live PID"
-        else:
-            checks["checks"]["lock"] = "ok — no lock"
+    # Check 1: live API (authoritative when the service is running)
+    api_health = _fetch_api_health(config)
+    if api_health is not None:
+        checks["status"] = api_health.get("status", "degraded")
+        checks["checks"]["api"] = {
+            "status": api_health.get("status", "degraded"),
+            "latest_sample_age_s": api_health.get("latest_sample_age_s"),
+            "total_samples": api_health.get("total_samples"),
+            "memory_used_bytes": api_health.get("memory_used_bytes"),
+            "memory_limit_bytes": api_health.get("memory_limit_bytes"),
+        }
     else:
-        checks["checks"]["lock"] = "ok — no lock"
+        # Fallback: newest snapshot on disk
+        from .storage import latest_snapshot
+
+        snap = latest_snapshot(config.snapshot_dir)
+        if snap is None:
+            checks["status"] = "dead"
+            checks["checks"]["store"] = "dead — no telemetry snapshot yet"
+        else:
+            from .reporting import _open_latest_snapshot
+
+            try:
+                conn = _open_latest_snapshot(config)
+                if conn is None:
+                    raise ValueError("snapshot unreadable")
+                row = conn.execute("SELECT MAX(id), MAX(epoch_s) FROM samples").fetchone()
+                conn.close()
+                latest_epoch = row[1] if row is not None and row[1] is not None else 0
+                age_s = int(time.time()) - latest_epoch
+                snap_age_s = int(time.time()) - int(snap.stat().st_mtime)
+
+                checks["checks"]["store"] = {
+                    "status": "ok",
+                    "latest_sample_age_s": age_s,
+                    "snapshot_age_s": snap_age_s,
+                    "snapshot_path": str(snap),
+                }
+                if age_s > (config.sample_interval_s * 5):
+                    checks["checks"]["store"]["status"] = "degraded"
+                    checks["status"] = "degraded"
+                elif snap_age_s > (config.snapshot_interval_s * 3):
+                    checks["checks"]["store"]["status"] = "degraded"
+                    checks["status"] = "degraded"
+            except Exception:
+                checks["status"] = "dead"
+                checks["checks"]["store"] = f"dead — snapshot unreadable: {snap}"
 
     if args.json:
         print(json.dumps(checks, indent=2))
@@ -251,6 +249,19 @@ def _cmd_health(args: Any) -> None:
 
     exit_code = {"ok": 0, "degraded": 1, "dead": 2}.get(checks["status"], 2)
     sys.exit(exit_code)
+
+
+def _fetch_api_health(config: Any) -> dict | None:
+    """Query the live API health endpoint, returning None if unreachable."""
+    import json
+    import urllib.request
+
+    url = f"http://127.0.0.1:{config.api_port}/api/health"
+    try:
+        with urllib.request.urlopen(url, timeout=3) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return None
 
 
 def _cmd_config(args: Any) -> None:
